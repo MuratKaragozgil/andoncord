@@ -4,19 +4,19 @@
 
 # AndonCord
 
-**Claude Code, Codex & Gemini CLI sessions on your Mac's notch.**
+**Claude Code, Codex, Gemini CLI & Cursor sessions on your Mac's notch.**
 Approve tool calls, answer questions, and review plans — without leaving your editor.
 
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-black)
 ![Swift](https://img.shields.io/badge/swift-6.0-F05138)
-![Tests](https://img.shields.io/badge/tests-68%20passing-3FB950)
+![Tests](https://img.shields.io/badge/tests-80%20passing-3FB950)
 ![Privacy](https://img.shields.io/badge/telemetry-none-blue)
 
 <br>
 
 <img src="docs/demo.gif" width="640" alt="AndonCord: Claude Code, Codex and Gemini running together, then Codex pulls the cord for a permission">
 
-<sub>Claude Code (CC), Codex (CX) and Gemini (GM) running side by side — then Codex pulls the cord and you approve, in the notch.</sub>
+<sub>Claude Code (CC), Codex (CX), Gemini (GM) and Cursor (CU) running side by side — then Codex pulls the cord and you approve, in the notch.</sub>
 
 </div>
 
@@ -36,12 +36,17 @@ hook contract honestly allows, and the UI never pretends otherwise:
 | **Claude Code** | `CC` | ✓ | ✓ permissions · questions · plan review | `~/.claude/settings.json` |
 | **Codex** | `CX` | ✓ | ✓ permissions | `~/.codex/hooks.json` |
 | **Gemini CLI** | `GM` | ✓ | alert + jump — Gemini hooks can announce an approval but not answer it | `~/.gemini/settings.json` |
+| **Cursor** | `CU` | ✓ | opt-in shell gate: Allow · Deny · Ask in Cursor | `~/.cursor/hooks.json` |
 
 One shim, one socket, one board; a `--source` tag per hook command is all that
 tells the agents apart. Claude Code and Codex share the decision format, so
 approvals round-trip from the notch. Gemini's `Notification` hook fires when a
 dialog appears but is fire-and-forget by design, so there the board alerts you
-and precise jump takes you to the terminal to decide.
+and precise jump takes you to the terminal to decide. Cursor has no "approval
+needed" event at all — instead its `beforeShellExecution` hook *is* the
+approval — so AndonCord watches by default and offers an opt-in gate that
+parks every shell command in the notch, with **Ask in Cursor** as the
+hand-back-to-native escape hatch.
 
 ## What it does
 
@@ -94,6 +99,8 @@ rows for Codex and Gemini CLI. With your consent AndonCord will:
 - **Gemini CLI** — add named hooks to `~/.gemini/settings.json` using Gemini's
   own event vocabulary (`BeforeTool`, `AfterAgent`, …); event arrays merge
   additively across scopes, and the entries show up by name in `/hooks`
+- **Cursor** — add entries to `~/.cursor/hooks.json` (flat schema, hot-reloaded
+  by Cursor); the shell gate is a separate toggle that rewrites the file live
 - create `~/.andoncord/` for the local socket, the hook launcher, and a
   timestamped backup taken before every change
 
@@ -199,7 +206,7 @@ drift from the palette the board uses.
 
 ```bash
 swift build --product andon-hook   # RoundTripTests spawn the real shim
-swift test                         # 68 tests
+swift test                         # 80 tests
 ```
 
 The tests that matter most:
@@ -238,6 +245,13 @@ as text instead of guesswork.
 - **Gemini is watch-only** — its hooks cannot answer approvals (`Notification`
   is fire-and-forget and `BeforeTool` runs post-approval), so the board
   alerts and jumps instead of showing Allow/Deny. Requires Gemini CLI ≥ 0.26.
+- **Cursor's gate gates everything** — `beforeShellExecution` fires for every
+  shell command, allowlisted ones included, and a hook decision bypasses
+  Cursor's own approval UI. That is why the gate is opt-in. Requires a 2026
+  `cursor-agent` (older CLIs never fire hooks — run `cursor-agent update`).
+  Cursor's CLI also runs Claude-format hooks from `settings.json`; AndonCord
+  detects `cursor_version` in those payloads and folds the double-fire into
+  one correctly-badged session.
 - First precise jump prompts for **Automation** permission (iTerm2 /
   Terminal.app only). Denying it degrades to app activation.
 - No SSH-remote sessions, no auto-update, ad-hoc signing only.
@@ -246,6 +260,6 @@ as text instead of guesswork.
 
 Inspired by [Vibe Island](https://vibeisland.app), which supports 26 agents.
 AndonCord is the opposite bet: a small, deliberately chosen set of agents —
-Claude Code, Codex, and Gemini CLI — each integrated exactly as deeply as its
-hooks allow, rather than many wired up shallowly. Built with
+Claude Code, Codex, Gemini CLI, and Cursor — each integrated exactly as deeply
+as its hooks allow, rather than many wired up shallowly. Built with
 [Claude Code](https://claude.com/claude-code) — one of the tools it watches.

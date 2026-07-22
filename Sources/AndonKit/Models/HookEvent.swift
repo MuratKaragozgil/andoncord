@@ -42,6 +42,20 @@ public enum HookEventName: String, Codable, Sendable {
         case "BeforeAgent": return .userPromptSubmit
         case "AfterAgent": return .stop
         case "PreCompress": return .preCompact
+        // Cursor: same structure again, camelCase this time. Its
+        // beforeShellExecution is the only decision point it offers, so that
+        // is what maps onto our permission moment.
+        case "sessionStart": return .sessionStart
+        case "sessionEnd": return .sessionEnd
+        case "beforeSubmitPrompt": return .userPromptSubmit
+        case "preToolUse": return .preToolUse
+        case "postToolUse": return .postToolUse
+        case "postToolUseFailure": return .postToolUseFailure
+        case "beforeShellExecution": return .permissionRequest
+        case "stop": return .stop
+        case "subagentStart": return .subagentStart
+        case "subagentStop": return .subagentStop
+        case "preCompact": return .preCompact
         default: return nil
         }
     }
@@ -95,6 +109,18 @@ public struct HookPayload: Codable, Sendable {
     /// Gemini's AfterAgent carries the turn's reply here.
     public var promptResponse: String?
 
+    // Cursor
+    /// Cursor's stable session key ("stable ID of the conversation").
+    public var conversationId: String?
+    /// Present on every Cursor payload — the reliable tell that an event came
+    /// from Cursor even when it arrived through a Claude-compat hook.
+    public var cursorVersion: String?
+    public var workspaceRoots: [String]?
+    /// Cursor's `stop` carries `status`: completed | aborted | error.
+    public var status: String?
+    /// Cursor's shell hooks put the command at the top level, not in tool_input.
+    public var command: String?
+
     /// Empty payload, used when a stdin blob decodes as JSON but not as
     /// anything we model. The raw object still travels in the envelope.
     public init() {}
@@ -120,6 +146,11 @@ public struct HookPayload: Codable, Sendable {
         case userMessage = "user_message"
         case prompt
         case promptResponse = "prompt_response"
+        case conversationId = "conversation_id"
+        case cursorVersion = "cursor_version"
+        case workspaceRoots = "workspace_roots"
+        case status
+        case command
     }
 
     public var event: HookEventName? {
@@ -138,6 +169,19 @@ public struct HookPayload: Codable, Sendable {
     /// different Claude Code versions have used for it.
     public var submittedPrompt: String? {
         userMessage ?? prompt ?? message
+    }
+
+    /// The session key across dialects: Claude/Codex use `session_id`, Cursor
+    /// uses `conversation_id`.
+    public var resolvedSessionId: String? {
+        if let sessionId, !sessionId.isEmpty { return sessionId }
+        return conversationId
+    }
+
+    /// Best-available working directory: Cursor events outside the shell
+    /// hooks carry only `workspace_roots`.
+    public var resolvedCwd: String? {
+        cwd ?? workspaceRoots?.first
     }
 }
 
@@ -211,14 +255,33 @@ public struct HookResponse: Codable, Sendable {
     public var suppressOutput: Bool?
     public var systemMessage: String?
 
+    // Cursor's decision contract is flat: {"permission": "allow"|"deny"|"ask"}
+    // with optional user/agent messages — no hookSpecificOutput envelope.
+    // These encode only when set, so Claude/Codex responses are unaffected.
+    public var permission: String?
+    public var userMessage: String?
+    public var agentMessage: String?
+
+    enum CodingKeys: String, CodingKey {
+        case hookSpecificOutput, suppressOutput, systemMessage, permission
+        case userMessage = "user_message"
+        case agentMessage = "agent_message"
+    }
+
     public init(
         hookSpecificOutput: HookSpecificOutput? = nil,
         suppressOutput: Bool? = nil,
-        systemMessage: String? = nil
+        systemMessage: String? = nil,
+        permission: String? = nil,
+        userMessage: String? = nil,
+        agentMessage: String? = nil
     ) {
         self.hookSpecificOutput = hookSpecificOutput
         self.suppressOutput = suppressOutput
         self.systemMessage = systemMessage
+        self.permission = permission
+        self.userMessage = userMessage
+        self.agentMessage = agentMessage
     }
 
     public struct HookSpecificOutput: Codable, Sendable {
@@ -290,4 +353,20 @@ public struct HookResponse: Codable, Sendable {
     }
 
     public static let empty = HookResponse()
+
+    // MARK: Cursor decisions
+
+    public static func cursorAllow() -> HookResponse {
+        HookResponse(permission: "allow")
+    }
+
+    public static func cursorDeny(reason: String) -> HookResponse {
+        HookResponse(permission: "deny", agentMessage: reason)
+    }
+
+    /// Hand the decision back to Cursor's own approval UI — the escape hatch
+    /// for "I want to see this in context" without denying the command.
+    public static func cursorAsk() -> HookResponse {
+        HookResponse(permission: "ask")
+    }
 }

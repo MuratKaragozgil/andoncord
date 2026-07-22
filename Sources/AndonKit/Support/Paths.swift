@@ -70,6 +70,11 @@ public enum Paths {
     /// key whose event arrays merge additively across config scopes.
     public static var geminiSettings: URL { geminiDir.appendingPathComponent("settings.json") }
 
+    public static var cursorDir: URL { home.appendingPathComponent(".cursor") }
+    /// Cursor's user-level hooks file. Flat schema (no inner `hooks` array),
+    /// watched and hot-reloaded by Cursor itself.
+    public static var cursorHooks: URL { cursorDir.appendingPathComponent("hooks.json") }
+
     /// Socket paths are capped at 104 bytes on Darwin (`sun_path`). A long
     /// username can push `~/.andoncord/run/andon.sock` past that, so callers
     /// need a way to find out before they try to bind.

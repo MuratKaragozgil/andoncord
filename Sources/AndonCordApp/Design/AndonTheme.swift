@@ -47,6 +47,7 @@ enum AndonTheme {
         case .claude: return Color(red: 0.827, green: 0.510, blue: 0.361)   // terracotta
         case .codex: return Color(red: 0.478, green: 0.686, blue: 0.937)    // sky blue
         case .gemini: return Color(red: 0.557, green: 0.749, blue: 0.518)   // google green
+        case .cursor: return Color(red: 0.678, green: 0.580, blue: 0.937)   // violet
         case .unknown: return textTertiary
         }
     }

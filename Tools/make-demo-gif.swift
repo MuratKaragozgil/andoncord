@@ -29,6 +29,7 @@ let red = C(0.898, 0.329, 0.294)
 let claudeTint = C(0.827, 0.510, 0.361)  // AgentSource.claude
 let codexTint = C(0.478, 0.686, 0.937)   // AgentSource.codex
 let geminiTint = C(0.557, 0.749, 0.518)  // AgentSource.gemini
+let cursorTint = C(0.678, 0.580, 0.937)  // AgentSource.cursor
 let inactive = C(0.290, 0.267, 0.227)
 
 func nscolor(_ c: CGColor) -> NSColor { NSColor(cgColor: c) ?? .white }
@@ -217,7 +218,7 @@ func drawFrame(_ ctx: CGContext, t: Double) {
     let w = collapsedW + (expandedW - collapsedW) * boardExpand
     let pillH: CGFloat = 40
     let cardExtra: CGFloat = showCard ? 176 : 0
-    let boardH = pillH + (196 + cardExtra - pillH) * boardExpand
+    let boardH = pillH + (242 + cardExtra - pillH) * boardExpand
     let x = (CGFloat(W) - w) / 2
     let radius = 12 + 10 * boardExpand
     let panel = rTL(x, 0, w, boardH)
@@ -241,7 +242,7 @@ func drawFrame(_ ctx: CGContext, t: Double) {
         ctx.setFillColor(amber); ctx.fill(rTL(padL, pillH / 2 - 6, 3, 11))
         ctx.setFillColor(green); ctx.fill(rTL(padL + 5, pillH / 2 - 6, 3, 11))
         text(ctx, "ANDONCORD", padL + 14, pillH / 2 - 5, size: 10, color: textSecondary, weight: .semibold, tracking: 1.2)
-        let count = cordPulled ? "1 waiting · 3 running" : "3 running"
+        let count = cordPulled ? "1 waiting · 4 running" : "4 running"
         text(ctx, count, x + w - 16 - tw(count, size: 10, mono: true), pillH / 2 - 5, size: 10, color: textTertiary, mono: true)
     }
 
@@ -266,6 +267,12 @@ func drawFrame(_ ctx: CGContext, t: Double) {
                agentLabel: "GM", agentTint: geminiTint, title: "migrate configs to v2",
                terminal: "Terminal", seconds: 21 + Int(t), cord: false,
                status: Int(t) % 2 == 0 ? "run_shell_command" : "Running…")
+    y += 46
+    ctx.setFillColor(hairline.copy(alpha: 0.5)!); ctx.fill(rTL(x + 30, y - 2, w - 44, 1))
+    sessionRow(ctx, x: x, top: y, width: w, t: t + 2.1,
+               agentLabel: "CU", agentTint: cursorTint, title: "refactor api client",
+               terminal: "Cursor", seconds: 33 + Int(t), cord: false,
+               status: Int(t) % 2 == 0 ? "Edit(client.ts)" : "Running…")
     y += 48
     ctx.restoreGState()
 

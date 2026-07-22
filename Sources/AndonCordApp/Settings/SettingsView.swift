@@ -32,6 +32,7 @@ struct SettingsView: View {
             integrationGroup
             codexGroup
             geminiGroup
+            cursorGroup
             behaviourGroup
             soundGroup
             aboutGroup
@@ -375,6 +376,118 @@ struct SettingsView: View {
     private func removeGemini() {
         geminiError = nil
         if case .failure(let error) = app.removeGemini() { geminiError = error.localizedDescription }
+    }
+
+    // MARK: - Cursor
+
+    @State private var cursorError: String?
+    @State private var confirmingCursorRemoval = false
+
+    private var cursorGroup: some View {
+        SettingsGroup("Cursor") {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(cursorColor)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: cursorColor.opacity(0.7), radius: 3)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cursorTitle)
+                            .font(AndonTheme.body(13, weight: .medium))
+                            .foregroundStyle(AndonTheme.textPrimary)
+                        if let sub = cursorSubtitle {
+                            Text(sub)
+                                .font(AndonTheme.body(11))
+                                .foregroundStyle(AndonTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if app.isCursorInstalled {
+                        Button("Remove") { confirmingCursorRemoval = true }
+                            .buttonStyle(AndonButtonStyle(tint: AndonTheme.red))
+                    } else {
+                        Button("Set up") { installCursor() }
+                            .buttonStyle(AndonButtonStyle(
+                                tint: AndonTheme.agentTint(.cursor), prominent: true))
+                    }
+                }
+                .padding(14)
+
+                if app.isCursorInstalled {
+                    RowDivider()
+                    ToggleRow(
+                        "Gate shell commands in the notch",
+                        detail: "Every Cursor shell command waits here for Allow / Deny / "
+                            + "Ask in Cursor — including allowlisted ones. Off means "
+                            + "watch-only.",
+                        isOn: Binding(
+                            get: { app.settings.cursorGateEnabled },
+                            set: { app.setCursorGate($0) }))
+                }
+
+                if let cursorError {
+                    RowDivider()
+                    Text(cursorError)
+                        .font(AndonTheme.body(11))
+                        .foregroundStyle(AndonTheme.red)
+                        .padding(14)
+                }
+            }
+        } footer: {
+            "Adds entries to ~/.cursor/hooks.json (hot-reloaded by Cursor). Requires a "
+                + "2026 cursor-agent — run `cursor-agent update` if sessions don't appear."
+        }
+        .alert("Remove AndonCord's Cursor hooks?", isPresented: $confirmingCursorRemoval) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) { removeCursor() }
+        } message: {
+            Text("Cursor will stop reporting to the board. Any other entries in "
+                 + "hooks.json are left in place.")
+        }
+    }
+
+    private var cursorColor: Color {
+        switch app.cursorStatus {
+        case .installed: return AndonTheme.green
+        case .notInstalled: return AndonTheme.inactive
+        case .drifted: return AndonTheme.amber
+        case .fileUnreadable: return AndonTheme.red
+        }
+    }
+
+    private var cursorTitle: String {
+        switch app.cursorStatus {
+        case .installed: return "Connected"
+        case .notInstalled: return "Not set up"
+        case .drifted: return "Needs repair"
+        case .fileUnreadable: return "Can't read hooks.json"
+        }
+    }
+
+    private var cursorSubtitle: String? {
+        switch app.cursorStatus {
+        case .installed:
+            return app.settings.cursorGateEnabled
+                ? "Watching, and gating shell commands through the notch."
+                : "Watching Cursor sessions. Shell gate is off."
+        case .notInstalled: return "Watch Cursor sessions; optionally gate shell commands."
+        case .drifted(let reason): return reason
+        case .fileUnreadable(let reason): return reason
+        }
+    }
+
+    private func installCursor() {
+        cursorError = nil
+        if case .failure(let error) = app.installCursor() { cursorError = error.localizedDescription }
+    }
+
+    private func removeCursor() {
+        cursorError = nil
+        if case .failure(let error) = app.removeCursor() { cursorError = error.localizedDescription }
     }
 
     // MARK: - Behaviour

@@ -99,21 +99,28 @@ public final class BoardStore {
     // MARK: - Event intake
 
     public func apply(_ envelope: HookEnvelope, decision: PendingDecision?) {
-        guard let sessionId = envelope.payload.sessionId, !sessionId.isEmpty else {
+        guard let sessionId = envelope.payload.resolvedSessionId, !sessionId.isEmpty else {
             // Without a session id we cannot attribute the event. Release the
             // hook rather than leaving it parked forever.
             decision?.abandon()
             return
         }
         let payload = envelope.payload
+        // The payload outranks the shim tag for Cursor: its CLI also runs
+        // Claude-format hooks from settings.json, so a Cursor session can
+        // arrive through a hook installed for Claude. `cursor_version` is on
+        // every Cursor payload and settles it — and because both routes carry
+        // the same conversation id, the double-fire collapses into one session
+        // instead of duplicating.
+        let agent: AgentSource = payload.cursorVersion != nil ? .cursor : envelope.agentSource
         var session = sessions[sessionId]
-            ?? makeSession(id: sessionId, agent: envelope.agentSource, payload: payload)
+            ?? makeSession(id: sessionId, agent: agent, payload: payload)
 
         // A real agent tag always wins over a placeholder, so a session first
         // seen through an untagged event gets corrected once a tagged one lands.
-        if envelope.agentSource != .unknown { session.agent = envelope.agentSource }
+        if agent != .unknown { session.agent = agent }
         session.lastActivityAt = envelope.receivedAt
-        if let cwd = payload.cwd { session.cwd = cwd }
+        if let cwd = payload.resolvedCwd { session.cwd = cwd }
         if let path = payload.transcriptPath { session.transcriptPath = path }
         if let mode = payload.permissionMode { session.permissionMode = mode }
         if let model = payload.modelDisplayName { session.modelName = model }
@@ -178,9 +185,17 @@ public final class BoardStore {
                 decision?.abandon()
                 break
             }
+            // Cursor's shell gate carries the command at the top level with no
+            // tool name; presenting it as a shell tool reuses the command card.
+            var toolName = payload.toolName ?? "tool"
+            var toolInput = payload.toolInput
+            if toolName == "tool", let command = payload.command {
+                toolName = "run_shell_command"
+                toolInput = .object(["command": .string(command)])
+            }
             let request = PendingRequest(
                 sessionId: sessionId, kind: .permission,
-                toolName: payload.toolName ?? "tool", toolInput: payload.toolInput)
+                toolName: toolName, toolInput: toolInput)
             park(decision, as: request, on: &session)
             emit(.cordPulled)
 
@@ -208,9 +223,14 @@ public final class BoardStore {
             // The attention state has nothing parked — the human answered in
             // the terminal and the turn ran to completion, so it is done.
             if session.pending == nil {
-                session.state = .done
-                session.lastAssistantMessage = payload.message ?? payload.promptResponse
-                emit(.done)
+                if payload.status == "error" {
+                    session.state = .failed(reason: "Turn ended in an error")
+                    emit(.failed)
+                } else {
+                    session.state = .done
+                    session.lastAssistantMessage = payload.message ?? payload.promptResponse
+                    emit(.done)
+                }
             }
 
         case .stopFailure:
@@ -284,14 +304,33 @@ public final class BoardStore {
     /// Approve a permission request. `rule` persists an allow rule so this
     /// shape of call stops asking.
     public func approve(_ request: PendingRequest, alwaysRule rule: String? = nil) {
-        settle(request, with: rule.map { HookResponse.allowPermission(rule: $0) }
-            ?? .allowPermission())
+        if agentFor(request) == .cursor {
+            settle(request, with: .cursorAllow())
+        } else {
+            settle(request, with: rule.map { HookResponse.allowPermission(rule: $0) }
+                ?? .allowPermission())
+        }
         emit(.cleared)
     }
 
     public func deny(_ request: PendingRequest, reason: String = "Denied from AndonCord") {
-        settle(request, with: .denyPermission(reason: reason))
+        if agentFor(request) == .cursor {
+            settle(request, with: .cursorDeny(reason: reason))
+        } else {
+            settle(request, with: .denyPermission(reason: reason))
+        }
         emit(.denied)
+    }
+
+    /// Cursor only: hand the decision to Cursor's own approval UI instead of
+    /// answering here. Exists because the notch gate intercepts *every* shell
+    /// command — sometimes the right answer is "show me this in context".
+    public func deferToAgent(_ request: PendingRequest) {
+        settle(request, with: .cursorAsk())
+    }
+
+    private func agentFor(_ request: PendingRequest) -> AgentSource {
+        sessions[request.sessionId]?.agent ?? .claude
     }
 
     /// Answer an `AskUserQuestion`.
