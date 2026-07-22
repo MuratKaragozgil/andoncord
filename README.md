@@ -12,6 +12,12 @@ Approve tool calls, answer questions, and review plans — without leaving your 
 ![Tests](https://img.shields.io/badge/tests-48%20passing-3FB950)
 ![Privacy](https://img.shields.io/badge/telemetry-none-blue)
 
+<br>
+
+<img src="docs/demo.gif" width="620" alt="AndonCord in action: idle, working, cord pulled, permission card">
+
+<sub>Idle → working (live equalizer, ticking timer) → cord pulled → approve a tool call, in the notch.</sub>
+
 </div>
 
 ---
@@ -144,8 +150,13 @@ Sources/
   AndonCordApp/        # SwiftUI + AppKit
     Notch/             # fixed-size panel, pill, board, request cards
     Terminal/          # precise jump (AppleScript / CLI / tmux)
-Tools/make-icon.swift  # the app icon, generated from the theme palette
+Tools/make-icon.swift      # the app icon, generated from the theme palette
+Tools/make-demo-gif.swift  # the README demo, rendered from the same palette + geometry
 ```
+
+> The demo above is rendered offscreen from the app's own palette, geometry, and
+> equalizer math — not a live screen capture — so it shows exactly what the app
+> draws. Regenerate it with `swift Tools/make-demo-gif.swift docs/demo.gif`.
 
 `AndonKit` deliberately avoids AppKit so the shim stays light — it is spawned
 on every tool call (~10 ms). The icon is code, not an asset, so it can never
