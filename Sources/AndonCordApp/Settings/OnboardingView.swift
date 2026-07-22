@@ -52,7 +52,7 @@ struct OnboardingView: View {
                     .frame(width: 5, height: 15)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text("Andon Cord")
+                Text("AndonCord")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(AndonTheme.textPrimary)
                 Text("Claude Code, on your notch")

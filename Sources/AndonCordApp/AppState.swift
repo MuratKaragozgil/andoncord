@@ -31,6 +31,14 @@ final class AppState {
     /// Set when another copy of the app already owns the socket.
     private(set) var duplicateInstancePID: pid_t?
 
+    /// Opens the real settings window. Wired by `MenuBarController`, which
+    /// owns the window. The notch panel calls this instead of presenting a
+    /// SwiftUI sheet — a sheet attaches to the fixed-size notch window and
+    /// floats inside its transparent expanse, which looks like a dialog lost
+    /// on a black field.
+    @ObservationIgnored
+    var openSettingsWindow: (() -> Void)?
+
     init() {
         board.onSound = { [weak self] sound in self?.playSound(sound) }
     }

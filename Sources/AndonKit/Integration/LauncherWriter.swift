@@ -21,7 +21,7 @@ public enum LauncherWriter {
         let bundleURL = Bundle.main.bundleURL
 
         let candidates = [
-            // Packaged: Andon Cord.app/Contents/MacOS/andon-hook
+            // Packaged: AndonCord.app/Contents/MacOS/andon-hook
             bundleURL.appendingPathComponent("Contents/MacOS/andon-hook"),
             // Development: sibling of the app executable in .build/debug
             bundleURL.appendingPathComponent("andon-hook"),
@@ -61,7 +61,7 @@ public enum LauncherWriter {
         let forward = extraArguments.map { "\($0) \"$@\"" } ?? "\"$@\""
         var lines = [
             "#!/bin/sh",
-            "# Andon Cord launcher — generated, do not edit.",
+            "# AndonCord launcher — generated, do not edit.",
             "# Resolves the helper inside the app bundle, then execs it.",
             "# Every failure path exits 0 so a hook never blocks Claude Code.",
             "",
@@ -75,8 +75,8 @@ public enum LauncherWriter {
 
         lines.append(contentsOf: [
             "for C in \\",
-            "  \"/Applications/Andon Cord.app/Contents/MacOS/andon-hook\" \\",
-            "  \"$HOME/Applications/Andon Cord.app/Contents/MacOS/andon-hook\"; do",
+            "  \"/Applications/AndonCord.app/Contents/MacOS/andon-hook\" \\",
+            "  \"$HOME/Applications/AndonCord.app/Contents/MacOS/andon-hook\"; do",
             "  [ -x \"$C\" ] && exec \"$C\" \(forward)",
             "done",
             "",

@@ -98,7 +98,7 @@ public struct RateLimits: Codable, Sendable, Equatable {
 /// The slice of Claude Code's statusline payload we keep.
 ///
 /// The statusline hook is the only documented surface that exposes
-/// `rate_limits`, which is why Andon Cord installs one at all.
+/// `rate_limits`, which is why AndonCord installs one at all.
 public struct StatusSnapshot: Codable, Sendable, Equatable {
     public var sessionId: String?
     public var rateLimits: RateLimits?

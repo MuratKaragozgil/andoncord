@@ -179,6 +179,17 @@ struct CollapsedPillView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
+        } else {
+            // Empty board. The pill stays up and says so, in andon colours:
+            // a red lamp means the line is stopped — which is exactly the
+            // state "no sessions at all" is. A pill that vanished here left
+            // no way to tell "idle" from "broken".
+            HStack(spacing: 7) {
+                DotLamp(color: AndonTheme.red, size: 8)
+                Text("Idle")
+                    .font(AndonTheme.body(11, weight: .medium))
+                    .foregroundStyle(AndonTheme.textTertiary)
+            }
         }
     }
 

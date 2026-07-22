@@ -43,7 +43,7 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         let area = NSTrackingArea(
             rect: bounds,
             // `.activeAlways` is the load-bearing option: without it the panel
-            // would only respond to hover while Andon Cord is the active app,
+            // would only respond to hover while AndonCord is the active app,
             // which it essentially never is.
             options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
             owner: self)

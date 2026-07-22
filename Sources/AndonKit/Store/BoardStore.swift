@@ -273,7 +273,7 @@ public final class BoardStore {
         emit(.cleared)
     }
 
-    public func deny(_ request: PendingRequest, reason: String = "Denied from Andon Cord") {
+    public func deny(_ request: PendingRequest, reason: String = "Denied from AndonCord") {
         settle(request, with: .denyPermission(reason: reason))
         emit(.denied)
     }

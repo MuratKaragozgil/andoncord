@@ -22,10 +22,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     func install() {
+        app.openSettingsWindow = { [weak self] in self?.showSettings() }
+
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.makeIcon()
         item.button?.image?.isTemplate = true
-        item.button?.toolTip = "Andon Cord"
+        item.button?.toolTip = "AndonCord"
 
         let menu = NSMenu()
         menu.delegate = self
@@ -121,7 +123,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         let quitItem = menu.addItem(
-            withTitle: "Quit Andon Cord", action: #selector(quit), keyEquivalent: "q")
+            withTitle: "Quit AndonCord", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         quitItem.isEnabled = true
     }
@@ -145,9 +147,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             return
         }
         let window = Self.makePanelWindow(
-            title: "Andon Cord Settings",
+            title: "AndonCord Settings",
             content: SettingsView(app: app),
-            size: NSSize(width: 460, height: 540))
+            // Must match SettingsView's fixed frame exactly: the hosting view
+            // does not drive window sizing, so a mismatch leaves either a
+            // clipped panel or a bare margin around it.
+            size: NSSize(width: 480, height: 640))
         window.isReleasedWhenClosed = false
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)
@@ -161,7 +166,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             return
         }
         let window = Self.makePanelWindow(
-            title: "Welcome to Andon Cord",
+            title: "Welcome to AndonCord",
             content: OnboardingView(app: app) { [weak self] in
                 self?.onboardingWindow?.close()
                 self?.onboardingWindow = nil
@@ -182,9 +187,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered, defer: false)
         window.title = title
+        // The SwiftUI header owns the title-bar strip, so hide the system
+        // title and let the content draw all the way to the top edge — that is
+        // what removes the empty black band a plain titled window leaves.
+        window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.backgroundColor = NSColor(AndonTheme.void)
-        window.contentView = NSHostingView(rootView: content)
+        let hosting = NSHostingView(rootView: content)
+        hosting.sizingOptions = []
+        window.contentView = hosting
         window.center()
         return window
     }

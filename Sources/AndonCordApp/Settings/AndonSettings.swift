@@ -15,6 +15,7 @@ final class AndonSettings {
         static let hideWhenIdle = "hideWhenIdle"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let quietWhileFocused = "quietWhileFocused"
+        static let migratedAlwaysVisiblePill = "migratedAlwaysVisiblePill"
     }
 
     private let defaults: UserDefaults
@@ -27,10 +28,22 @@ final class AndonSettings {
             Key.autoExpand: true,
             Key.showUsage: true,
             Key.followFocusedScreen: true,
-            Key.hideWhenIdle: true,
+            // Off by default: a pill that vanishes when the board empties made
+            // "is it broken or just idle?" unanswerable. The idle pill now
+            // shows a red stopped lamp instead — visible proof of both states.
+            Key.hideWhenIdle: false,
             Key.hasCompletedOnboarding: false,
             Key.quietWhileFocused: true,
         ])
+
+        // One-time migration for installs that predate the new default. A
+        // registered default only wins when no value was ever stored, so
+        // without this, anyone whose toggle was written back while the old
+        // default was `true` would never see the change.
+        if !defaults.bool(forKey: Key.migratedAlwaysVisiblePill) {
+            defaults.removeObject(forKey: Key.hideWhenIdle)
+            defaults.set(true, forKey: Key.migratedAlwaysVisiblePill)
+        }
     }
 
     var soundsEnabled: Bool {

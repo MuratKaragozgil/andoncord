@@ -1,6 +1,6 @@
 import Foundation
 
-/// Records the `statusLine` configuration that was in place before Andon Cord
+/// Records the `statusLine` configuration that was in place before AndonCord
 /// took it over.
 ///
 /// Only one statusline command can be configured at a time, so installing ours

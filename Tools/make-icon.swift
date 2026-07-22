@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-// Renders the Andon Cord app icon at every size macOS asks for.
+// Renders the AndonCord app icon at every size macOS asks for.
 //
 // Generated rather than hand-drawn so the mark stays in lockstep with the
 // palette in `AndonTheme` — the icon uses the same amber and green as the

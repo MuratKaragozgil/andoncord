@@ -9,7 +9,7 @@ import Foundation
 //
 //  1. FAIL OPEN. This process sits on the user's critical path. If the app is
 //     not running, is mid-update, or is wedged, Claude Code must carry on
-//     exactly as if Andon Cord were not installed. Every failure path exits 0
+//     exactly as if AndonCord were not installed. Every failure path exits 0
 //     with no stdout, which Claude Code reads as "the hook had no opinion".
 //
 //  2. STAY CHEAP. This runs twice per tool call. No parsing beyond what is
@@ -64,7 +64,7 @@ guard !stdinData.isEmpty else { failOpen("empty stdin") }
 
 if isStatusline {
     // Claude Code exposes `rate_limits` on the statusline payload and nowhere
-    // else, which is the entire reason Andon Cord installs a statusline at
+    // else, which is the entire reason AndonCord installs a statusline at
     // all. Cache it, then hand control to whatever statusline the user had
     // before us so their own output is untouched.
     if let snapshot = try? JSONDecoder().decode(StatusSnapshot.self, from: stdinData),

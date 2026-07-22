@@ -445,7 +445,7 @@ public enum TerminalJumper {
         // desktop app, an IDE task runner — and raising that host is still a
         // useful jump even though no tab can be addressed.
         guard let bundleID = kind.bundleIdentifier ?? hostBundleIdentifier else {
-            return .failed("Andon Cord can't tell which app this session is running in")
+            return .failed("AndonCord can't tell which app this session is running in")
         }
         let running = NSRunningApplication.runningApplications(
             withBundleIdentifier: bundleID

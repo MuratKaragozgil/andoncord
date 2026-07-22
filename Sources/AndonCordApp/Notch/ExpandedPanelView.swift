@@ -10,8 +10,6 @@ struct ExpandedPanelView: View {
     let controller: NotchController
     let app: AppState
 
-    @State private var showingSettings = false
-
     private var board: BoardStore { app.board }
     private var waiting: [Session] { board.sessionsNeedingHuman }
 
@@ -45,9 +43,6 @@ struct ExpandedPanelView: View {
         // Shape, border and shadow belong to the animated container in
         // `NotchRootView`, which is the thing that actually grows.
         .animation(AndonTheme.Motion.expand, value: waiting.first?.pending?.id)
-        .sheet(isPresented: $showingSettings) {
-            SettingsView(app: app)
-        }
     }
 
     // MARK: - Header
@@ -61,7 +56,7 @@ struct ExpandedPanelView: View {
                 RoundedRectangle(cornerRadius: 1.5).fill(AndonTheme.green)
                     .frame(width: 3, height: 11)
             }
-            Text("ANDON CORD")
+            Text("ANDONCORD")
                 .font(AndonTheme.label(10))
                 .tracking(1.4)
                 .foregroundStyle(AndonTheme.textSecondary)
@@ -75,7 +70,10 @@ struct ExpandedPanelView: View {
             }
 
             Button {
-                showingSettings = true
+                // The panel collapses first so the settings window is not left
+                // underneath the status-bar-level notch panel.
+                controller.collapse()
+                app.openSettingsWindow?()
             } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 11, weight: .medium))

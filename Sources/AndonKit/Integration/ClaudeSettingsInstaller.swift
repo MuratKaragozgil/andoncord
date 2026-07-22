@@ -1,6 +1,6 @@
 import Foundation
 
-/// Installs, verifies, and removes Andon Cord's wiring in `~/.claude/settings.json`.
+/// Installs, verifies, and removes AndonCord's wiring in `~/.claude/settings.json`.
 ///
 /// This is the only file outside `~/.andoncord` that we ever write, and it is
 /// a file the user (and Claude Code, and possibly other notch apps) also

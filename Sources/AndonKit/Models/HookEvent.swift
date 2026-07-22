@@ -1,6 +1,6 @@
 import Foundation
 
-/// The Claude Code hook events Andon Cord subscribes to.
+/// The Claude Code hook events AndonCord subscribes to.
 ///
 /// Claude Code emits considerably more than this; we register only for what
 /// drives the board, because every registered hook is a process spawn on the

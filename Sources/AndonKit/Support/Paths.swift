@@ -1,6 +1,6 @@
 import Foundation
 
-/// Every on-disk location Andon Cord touches, in one place.
+/// Every on-disk location AndonCord touches, in one place.
 ///
 /// Everything the app owns lives under `~/.andoncord`. The only file outside
 /// that tree we ever write is `~/.claude/settings.json`, and that write is

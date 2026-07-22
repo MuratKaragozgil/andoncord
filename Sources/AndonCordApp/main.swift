@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentDuplicateInstanceAlert(pid: pid_t) {
         let alert = NSAlert()
-        alert.messageText = "Andon Cord is already running"
+        alert.messageText = "AndonCord is already running"
         alert.informativeText =
             "Another copy (pid \(pid)) already owns the local socket. "
             + "Quit that one first, or use the copy already in your menu bar."

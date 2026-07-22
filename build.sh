@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds Andon Cord.app.
+# Builds AndonCord.app.
 #
 # SPM cannot emit an app bundle, so the executable is assembled into one by
 # hand. The hook shim ships inside the same bundle as the app: the launcher in
@@ -9,7 +9,7 @@ set -euo pipefail
 
 CONFIG="${1:-debug}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-APP_NAME="Andon Cord"
+APP_NAME="AndonCord"
 BUNDLE_ID="app.andoncord.mac"
 VERSION="0.1.0"
 
@@ -62,7 +62,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <!-- Precise terminal jump drives iTerm2 and Terminal.app via Apple events.
        macOS shows this string in the automation consent prompt. -->
   <key>NSAppleEventsUsageDescription</key>
-  <string>Andon Cord uses automation to bring the terminal tab running a Claude Code session back to the front when you click it.</string>
+  <string>AndonCord uses automation to bring the terminal tab running a Claude Code session back to the front when you click it.</string>
 
   <key>NSHighResolutionCapable</key><true/>
 </dict>
