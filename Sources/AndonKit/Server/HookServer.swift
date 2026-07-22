@@ -77,7 +77,26 @@ public final class HookServer {
     private let pendingLock = NSLock()
     private var pending: [UUID: PendingDecision] = [:]
 
-    public init() {}
+    /// Ceiling on simultaneously open client fds. Legit load is one fd per
+    /// in-flight hook — a few dozen at the very worst — so hitting this means
+    /// something hostile or broken is spraying connections. Shedding beats
+    /// hanging: a dropped connection makes that one shim fail open, a starved
+    /// fd table takes the whole board down.
+    private let clientLock = NSLock()
+    private var openClients = 0
+    private static let maxOpenClients = 256
+
+    /// How long a client gets to deliver its one request line. A real shim
+    /// writes immediately after connecting; only a stalled or hostile peer
+    /// needs longer. `readTimeout` wakes each blocked read, `readDeadline`
+    /// bounds the line as a whole. Overridable so tests don't sit for 30s.
+    private let readTimeout: TimeInterval
+    private let readDeadline: TimeInterval
+
+    public init(readTimeout: TimeInterval = 10, readDeadline: TimeInterval = 30) {
+        self.readTimeout = readTimeout
+        self.readDeadline = readDeadline
+    }
 
     public var isRunning: Bool { listenFD >= 0 }
 
@@ -135,21 +154,60 @@ public final class HookServer {
                 if errno == EINTR { continue }
                 return
             }
+
+            // Only talk to our own user. The 0700 run directory is what keeps
+            // other users away from the socket; this check holds even if those
+            // permissions ever drift (a loosened home, ACLs, a restore).
+            var uid: uid_t = 0, gid: gid_t = 0
+            guard getpeereid(clientFD, &uid, &gid) == 0, uid == getuid() else {
+                close(clientFD)
+                continue
+            }
+
+            clientLock.lock()
+            let overBudget = openClients >= Self.maxOpenClients
+            if !overBudget { openClients += 1 }
+            clientLock.unlock()
+            if overBudget {
+                close(clientFD)
+                continue
+            }
+
             var one: Int32 = 1
             setsockopt(clientFD, SOL_SOCKET, SO_NOSIGPIPE, &one,
                        socklen_t(MemoryLayout<Int32>.size))
+            // A peer that connects and then stalls must not pin an ioQueue
+            // worker: the receive timeout wakes the read loop so readLine's
+            // deadline can fire. The send timeout is for a peer that never
+            // drains its response — a real shim is blocked in read() by then.
+            var window = SocketTransport.timevalFrom(readTimeout)
+            setsockopt(clientFD, SOL_SOCKET, SO_RCVTIMEO, &window,
+                       socklen_t(MemoryLayout<timeval>.size))
+            setsockopt(clientFD, SOL_SOCKET, SO_SNDTIMEO, &window,
+                       socklen_t(MemoryLayout<timeval>.size))
             ioQueue.async { [weak self] in self?.handleConnection(clientFD) }
         }
     }
 
+    /// Every client fd must come back through here so the budget stays true.
+    private func closeClient(_ fd: Int32) {
+        close(fd)
+        clientLock.lock()
+        openClients -= 1
+        clientLock.unlock()
+    }
+
     private func handleConnection(_ fd: Int32) {
-        guard let line = try? SocketTransport.readLine(from: fd), !line.isEmpty else {
-            close(fd)
+        guard let line = try? SocketTransport.readLine(
+            from: fd, deadline: Date().addingTimeInterval(readDeadline)),
+            !line.isEmpty
+        else {
+            closeClient(fd)
             return
         }
         guard let envelope = try? JSONDecoder().decode(HookEnvelope.self, from: line) else {
             Log.server.error("Undecodable envelope, dropping")
-            close(fd)
+            closeClient(fd)
             return
         }
 
@@ -163,8 +221,8 @@ public final class HookServer {
                     if let response, let data = try? JSONEncoder().encode(response) {
                         try? SocketTransport.writeLine(data, to: fd)
                     }
-                    close(fd)
-                    guard let self else { return }
+                    guard let self else { close(fd); return }
+                    self.closeClient(fd)
                     self.pendingLock.lock()
                     self.pending.removeValue(forKey: id)
                     self.pendingLock.unlock()
@@ -179,7 +237,7 @@ public final class HookServer {
                 handler(envelope, decision)
             }
         } else {
-            close(fd)
+            closeClient(fd)
             DispatchQueue.main.async { [weak self] in
                 self?.onEvent?(envelope, nil)
             }

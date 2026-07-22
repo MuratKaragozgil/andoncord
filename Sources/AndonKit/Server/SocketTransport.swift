@@ -123,10 +123,20 @@ public enum SocketTransport {
     }
 
     /// Read one newline-terminated frame. Returns nil on clean EOF.
-    public static func readLine(from fd: Int32, maxBytes: Int = 8 * 1024 * 1024) throws -> Data? {
+    ///
+    /// `deadline` bounds the whole read, not just each byte: a peer that
+    /// dribbles one byte per SO_RCVTIMEO interval would otherwise hold the
+    /// reading thread forever. The shim's own reads pass no deadline — a
+    /// blocking hook legitimately waits hours for a human.
+    public static func readLine(
+        from fd: Int32, maxBytes: Int = 8 * 1024 * 1024, deadline: Date? = nil
+    ) throws -> Data? {
         var accumulated = Data()
         var byte: UInt8 = 0
         while accumulated.count < maxBytes {
+            if let deadline, accumulated.count & 0xFFF == 0, Date() >= deadline {
+                throw TransportError.timedOut
+            }
             let count = Darwin.read(fd, &byte, 1)
             if count == 1 {
                 if byte == 0x0A { return accumulated }
@@ -144,7 +154,7 @@ public enum SocketTransport {
         return accumulated
     }
 
-    private static func timevalFrom(_ interval: TimeInterval) -> timeval {
+    static func timevalFrom(_ interval: TimeInterval) -> timeval {
         let seconds = Int(interval)
         let microseconds = Int((interval - Double(seconds)) * 1_000_000)
         return timeval(tv_sec: seconds, tv_usec: Int32(microseconds))

@@ -178,7 +178,10 @@ public enum TerminalJumper {
         // tmux wins over the host terminal: when a session lives in a tmux
         // pane, the terminal's own tab addressing points at the tmux client,
         // not at the pane the session is actually in.
-        if context.isInsideTmux, let pane = context.tmuxPane, !pane.isEmpty {
+        // Validated like the other pane ids: argv arrays make injection
+        // impossible today, but hook-derived strings should never rely on
+        // the call site staying shell-free.
+        if context.isInsideTmux, let pane = context.tmuxPane, isPlausibleIdentifier(pane) {
             return jumpViaTmux(context, pane: pane)
         }
 
@@ -402,7 +405,10 @@ public enum TerminalJumper {
         // `KITTY_LISTEN_ON` only exists when the user opted into remote control
         // (`allow_remote_control` plus `listen_on` in kitty.conf). Without it
         // there is no channel to kitty at all, so do not pretend.
-        guard let listenOn = context.kittyListenOn, !listenOn.isEmpty,
+        // `listen_on` is only ever a unix:/tcp: address in kitty.conf; any
+        // other shape is a corrupted or hostile env, not a reachable kitty.
+        guard let listenOn = context.kittyListenOn,
+              listenOn.hasPrefix("unix:") || listenOn.hasPrefix("tcp:"),
               let windowID = context.kittyWindowId, isPlausibleIdentifier(windowID)
         else {
             return activateApp(.kitty)
