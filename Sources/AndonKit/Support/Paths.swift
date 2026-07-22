@@ -58,6 +58,13 @@ public enum Paths {
     public static var claudeDir: URL { home.appendingPathComponent(".claude") }
     public static var claudeSettings: URL { claudeDir.appendingPathComponent("settings.json") }
 
+    public static var codexDir: URL { home.appendingPathComponent(".codex") }
+    /// Codex hooks live in their own file, separate from `config.toml` — which
+    /// matters, because `config.toml` holds a single `notify` key we must not
+    /// touch, whereas hook sources are additive.
+    public static var codexHooks: URL { codexDir.appendingPathComponent("hooks.json") }
+    public static var codexConfig: URL { codexDir.appendingPathComponent("config.toml") }
+
     /// Socket paths are capped at 104 bytes on Darwin (`sun_path`). A long
     /// username can push `~/.andoncord/run/andon.sock` past that, so callers
     /// need a way to find out before they try to bind.

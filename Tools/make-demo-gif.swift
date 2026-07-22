@@ -5,11 +5,13 @@ import ImageIO
 import UniformTypeIdentifiers
 
 // Renders a faithful demo of the AndonCord notch panel, frame by frame, into an
-// animated GIF. Not a screen capture (this environment has no screen-recording
-// permission) — every pixel is drawn from the same palette, geometry, and
-// equalizer math the real app uses, so it mirrors what the app renders.
+// animated GIF. Not a screen capture (the build environment has no
+// screen-recording permission) — every pixel is drawn from the same palette,
+// geometry, equalizer math, and agent tints the real app uses, so it mirrors
+// what the app renders. The story: two agents (Claude Code + Codex) running at
+// once on the board, then Codex pulls the cord for a permission.
 
-// MARK: - Palette (mirrors AndonTheme exactly)
+// MARK: - Palette (mirrors AndonTheme)
 
 func C(_ r: Double, _ g: Double, _ b: Double, _ a: Double = 1) -> CGColor {
     CGColor(srgbRed: r, green: g, blue: b, alpha: a)
@@ -24,60 +26,46 @@ let textTertiary = C(0.431, 0.404, 0.353)
 let amber = C(0.910, 0.639, 0.239)
 let green = C(0.341, 0.780, 0.498)
 let red = C(0.898, 0.329, 0.294)
-let accent = C(0.851, 0.467, 0.341)
+let claudeTint = C(0.827, 0.510, 0.361)  // AgentSource.claude
+let codexTint = C(0.478, 0.686, 0.937)   // AgentSource.codex
 let inactive = C(0.290, 0.267, 0.227)
 
 func nscolor(_ c: CGColor) -> NSColor { NSColor(cgColor: c) ?? .white }
 
-// MARK: - Canvas
-
-let W = 760, H = 460
+let W = 760, H = 520
 let scale = 2
 let pxW = W * scale, pxH = H * scale
 
-/// Top-left rect helper (CoreGraphics origin is bottom-left).
 func rTL(_ x: CGFloat, _ top: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
     CGRect(x: x, y: CGFloat(H) - top - h, width: w, height: h)
 }
-
 func roundedPath(_ r: CGRect, _ radius: CGFloat) -> CGPath {
     CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)
 }
-
-/// The notch shape: square top corners (flush with the screen edge), rounded
-/// bottom — exactly `NotchShape` in the app.
 func notchPath(_ r: CGRect, _ radius: CGFloat) -> CGPath {
     let p = CGMutablePath()
     p.move(to: CGPoint(x: r.minX, y: r.maxY))
     p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
     p.addLine(to: CGPoint(x: r.maxX, y: r.minY + radius))
-    p.addQuadCurve(to: CGPoint(x: r.maxX - radius, y: r.minY),
-                   control: CGPoint(x: r.maxX, y: r.minY))
+    p.addQuadCurve(to: CGPoint(x: r.maxX - radius, y: r.minY), control: CGPoint(x: r.maxX, y: r.minY))
     p.addLine(to: CGPoint(x: r.minX + radius, y: r.minY))
-    p.addQuadCurve(to: CGPoint(x: r.minX, y: r.minY + radius),
-                   control: CGPoint(x: r.minX, y: r.minY))
+    p.addQuadCurve(to: CGPoint(x: r.minX, y: r.minY + radius), control: CGPoint(x: r.minX, y: r.minY))
     p.closeSubpath()
     return p
 }
-
 func text(_ ctx: CGContext, _ s: String, _ x: CGFloat, _ top: CGFloat,
           size: CGFloat, color: CGColor, weight: NSFont.Weight = .regular,
           mono: Bool = false, tracking: CGFloat = 0) {
-    let font = mono
-        ? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
-        : NSFont.systemFont(ofSize: size, weight: weight)
-    let attrs: [NSAttributedString.Key: Any] = [
-        .font: font, .foregroundColor: nscolor(color), .kern: tracking,
-    ]
-    let str = NSAttributedString(string: s, attributes: attrs)
+    let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+                    : NSFont.systemFont(ofSize: size, weight: weight)
+    let str = NSAttributedString(string: s, attributes: [
+        .font: font, .foregroundColor: nscolor(color), .kern: tracking])
     let ns = NSGraphicsContext(cgContext: ctx, flipped: false)
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = ns
+    NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = ns
     str.draw(at: NSPoint(x: x, y: CGFloat(H) - top - size * 1.15))
     NSGraphicsContext.restoreGraphicsState()
 }
-
-func textWidth(_ s: String, size: CGFloat, weight: NSFont.Weight = .regular, mono: Bool = false) -> CGFloat {
+func tw(_ s: String, size: CGFloat, weight: NSFont.Weight = .regular, mono: Bool = false) -> CGFloat {
     let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
                     : NSFont.systemFont(ofSize: size, weight: weight)
     return NSAttributedString(string: s, attributes: [.font: font]).size().width
@@ -85,220 +73,172 @@ func textWidth(_ s: String, size: CGFloat, weight: NSFont.Weight = .regular, mon
 
 // MARK: - Components
 
-func lampColor(_ state: String) -> CGColor {
-    switch state {
-    case "working": return green
-    case "cord": return amber
-    default: return red
-    }
-}
-
-/// Equalizer bars — identical math to WorkingIndicator.
 func equalizer(_ ctx: CGContext, cx: CGFloat, cy: CGFloat, size: CGFloat, t: Double, color: CGColor) {
     let barW = size * 0.22, sp = size * 0.17
-    let phases = [0.0, 1.1, 2.2]
     let total = barW * 3 + sp * 2
     var x = cx - total / 2
-    ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: 4, color: color.copy(alpha: 0.5))
-    for ph in phases {
-        let wave = 0.5 + 0.5 * sin(t * 7 + ph)
-        let h = size * (0.32 + 0.68 * wave)
+    ctx.saveGState(); ctx.setShadow(offset: .zero, blur: 4, color: color.copy(alpha: 0.5))
+    for ph in [0.0, 1.1, 2.2] {
+        let h = size * (0.32 + 0.68 * (0.5 + 0.5 * sin(t * 7 + ph)))
         ctx.setFillColor(color)
-        let rect = CGRect(x: x, y: cy - h / 2, width: barW, height: h)
-        ctx.addPath(CGPath(roundedRect: rect, cornerWidth: barW / 2,
-                           cornerHeight: min(barW / 2, h / 2), transform: nil))
-        ctx.fillPath()
-        x += barW + sp
+        ctx.addPath(CGPath(roundedRect: CGRect(x: x, y: cy - h / 2, width: barW, height: h),
+                           cornerWidth: barW / 2, cornerHeight: min(barW / 2, h / 2), transform: nil))
+        ctx.fillPath(); x += barW + sp
     }
     ctx.restoreGState()
 }
-
 func dot(_ ctx: CGContext, cx: CGFloat, cy: CGFloat, size: CGFloat, color: CGColor, glow: CGFloat = 0.5) {
-    ctx.saveGState()
-    ctx.setShadow(offset: .zero, blur: 4, color: color.copy(alpha: glow))
+    ctx.saveGState(); ctx.setShadow(offset: .zero, blur: 4, color: color.copy(alpha: glow))
     ctx.setFillColor(color)
-    let r = CGRect(x: cx - size / 2, y: cy - size / 2, width: size, height: size)
-    ctx.addPath(CGPath(roundedRect: r, cornerWidth: size * 0.3, cornerHeight: size * 0.3, transform: nil))
-    ctx.fillPath()
-    ctx.restoreGState()
+    ctx.addPath(CGPath(roundedRect: CGRect(x: cx - size / 2, y: cy - size / 2, width: size, height: size),
+                       cornerWidth: size * 0.3, cornerHeight: size * 0.3, transform: nil))
+    ctx.fillPath(); ctx.restoreGState()
 }
-
-func meter(_ ctx: CGContext, x: CGFloat, cy: CGFloat, fraction: Double, color: CGColor) {
-    let segs = 5, segW: CGFloat = 5, gap: CGFloat = 1.5, hgt: CGFloat = 7
-    let lit = Int((Double(segs) * fraction).rounded(.up))
-    var cx = x
-    for i in 0..<segs {
-        ctx.setFillColor(i < lit ? color : inactive.copy(alpha: 0.5)!)
-        let r = CGRect(x: cx, y: cy - hgt / 2, width: segW, height: hgt)
-        ctx.addPath(CGPath(roundedRect: r, cornerWidth: 1, cornerHeight: 1, transform: nil))
-        ctx.fillPath()
-        cx += segW + gap
-    }
+/// Two-letter agent badge, matching AgentBadge.
+func badge(_ ctx: CGContext, _ label: String, x: CGFloat, cy: CGFloat, tint: CGColor) -> CGFloat {
+    let fs: CGFloat = 10, pad: CGFloat = 4
+    let w = tw(label, size: fs, weight: .bold, mono: true) + pad * 2, h: CGFloat = 16
+    let r = CGRect(x: x, y: cy - h / 2, width: w, height: h)
+    ctx.setFillColor(tint.copy(alpha: 0.16)!)
+    ctx.addPath(roundedPath(r, 3)); ctx.fillPath()
+    text(ctx, label, x + pad, CGFloat(H) - cy - fs * 0.62, size: fs, color: tint, weight: .bold, mono: true)
+    return w
 }
-
 func pillButton(_ ctx: CGContext, _ label: String, x: CGFloat, top: CGFloat,
                 tint: CGColor, prominent: Bool, highlight: Bool = false) -> CGFloat {
-    let padH: CGFloat = 12, fontSize: CGFloat = 12
-    let tw = textWidth(label, size: fontSize, weight: .semibold)
-    let w = tw + padH * 2, h: CGFloat = 28
+    let padH: CGFloat = 12, fs: CGFloat = 12
+    let w = tw(label, size: fs, weight: .semibold) + padH * 2, h: CGFloat = 28
     let r = rTL(x, top, w, h)
-    ctx.saveGState()
-    let fill = prominent ? tint : tint.copy(alpha: highlight ? 0.30 : 0.16)!
-    ctx.setFillColor(fill)
+    ctx.setFillColor(prominent ? tint : tint.copy(alpha: highlight ? 0.30 : 0.16)!)
     ctx.addPath(roundedPath(r, 7)); ctx.fillPath()
     if !prominent {
         ctx.setStrokeColor(tint.copy(alpha: 0.35)!); ctx.setLineWidth(1)
         ctx.addPath(roundedPath(r.insetBy(dx: 0.5, dy: 0.5), 7)); ctx.strokePath()
     }
-    ctx.restoreGState()
-    let tcolor = prominent ? void : tint
-    text(ctx, label, x + padH, top + (h - fontSize) / 2 - 1, size: fontSize, color: tcolor, weight: .semibold)
+    text(ctx, label, x + padH, top + (h - fs) / 2 - 1, size: fs,
+         color: prominent ? void : tint, weight: .semibold)
     return w
+}
+
+/// One session row on the board.
+func sessionRow(_ ctx: CGContext, x: CGFloat, top: CGFloat, width: CGFloat, t: Double,
+                agentLabel: String, agentTint: CGColor, title: String, terminal: String,
+                seconds: Int, cord: Bool, status: String) {
+    let cy = CGFloat(H) - top - 23
+    if cord {
+        let blink = sin(t * 7) > 0 ? 1.0 : 0.55
+        dot(ctx, cx: x + 15, cy: cy, size: 9, color: amber, glow: 0.9 * blink)
+    } else {
+        equalizer(ctx, cx: x + 16, cy: cy, size: 12, t: t, color: green)
+    }
+    let bw = badge(ctx, agentLabel, x: x + 30, cy: cy, tint: agentTint)
+    text(ctx, title, x + 30 + bw + 8, top + 9, size: 12, color: textPrimary, weight: .medium)
+    let timeLabel = "\(seconds)s"
+    let timeW = tw(timeLabel, size: 10, mono: true)
+    text(ctx, timeLabel, x + width - 14 - timeW, top + 10, size: 10,
+         color: cord ? amber : green, weight: .medium, mono: true)
+    let termW = tw(terminal, size: 9)
+    text(ctx, terminal, x + width - 14 - timeW - 10 - termW, top + 11, size: 9, color: textTertiary)
+    text(ctx, status, x + 30 + bw + 8, top + 25, size: 10.5, color: cord ? amber : textSecondary)
 }
 
 // MARK: - Frame
 
-/// Eased 0→1 over [a,b].
 func ramp(_ t: Double, _ a: Double, _ b: Double) -> Double {
     if t <= a { return 0 }; if t >= b { return 1 }
-    let x = (t - a) / (b - a)
-    return x * x * (3 - 2 * x) // smoothstep
+    let x = (t - a) / (b - a); return x * x * (3 - 2 * x)
 }
 
 func drawFrame(_ ctx: CGContext, t: Double) {
-    // Backdrop: a soft dark "desktop" so the panel reads as hanging from the top.
     if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                           colors: [C(0.10, 0.10, 0.12), C(0.04, 0.04, 0.05)] as CFArray,
                           locations: [0, 1]) {
-        ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: CGFloat(H)),
-                               end: CGPoint(x: 0, y: 0), options: [])
+        ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: CGFloat(H)), end: CGPoint(x: 0, y: 0), options: [])
     }
 
-    // ── Scene timeline (seconds) ──
-    // 0.0-1.0 idle | 1.0-3.0 working | 3.0-3.4 cord pulled | 3.4-3.8 expand
-    // 3.8-5.6 permission card | 5.6-6.0 approve→working
-    let expand = ramp(t, 3.4, 3.8) - ramp(t, 5.6, 5.9)  // 0→1→0
+    // Timeline (s): 0-1 idle | 1-1.4 expand | 1.4-4.6 two agents working
+    //   | 4.6 Codex pulls cord | 5-7.4 permission card | 7.4-7.8 collapse
+    let boardExpand = ramp(t, 1.0, 1.4) - ramp(t, 7.4, 7.7)
+    let cordPulled = t >= 4.6 && t < 7.5
+    let showCard = t >= 5.0 && t < 7.5
 
-    // Panel geometry, centered at top.
-    let collapsedW: CGFloat = 330
-    let expandedW: CGFloat = 460
-    let w = collapsedW + (expandedW - collapsedW) * expand
+    let collapsedW: CGFloat = 340, expandedW: CGFloat = 470
+    let w = collapsedW + (expandedW - collapsedW) * boardExpand
     let pillH: CGFloat = 40
-    let panelH = pillH + (250 - pillH) * expand
+    let cardExtra: CGFloat = showCard ? 176 : 0
+    let boardH = pillH + (150 + cardExtra - pillH) * boardExpand
     let x = (CGFloat(W) - w) / 2
-    let radius = 12 + 10 * expand
-    let panelRect = rTL(x, 0, w, panelH)
+    let radius = 12 + 10 * boardExpand
+    let panel = rTL(x, 0, w, boardH)
 
-    // Shape + border + shadow.
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -8), blur: 22 * (0.4 + 0.6 * expand),
-                  color: C(0, 0, 0, 0.55))
-    ctx.setFillColor(void)
-    ctx.addPath(notchPath(panelRect, radius)); ctx.fillPath()
+    ctx.setShadow(offset: CGSize(width: 0, height: -8), blur: 22 * (0.4 + 0.6 * boardExpand), color: C(0, 0, 0, 0.55))
+    ctx.setFillColor(void); ctx.addPath(notchPath(panel, radius)); ctx.fillPath()
     ctx.restoreGState()
-    if expand > 0.02 {
-        ctx.setStrokeColor(hairline.copy(alpha: expand)!); ctx.setLineWidth(1)
-        ctx.addPath(notchPath(panelRect.insetBy(dx: 0.5, dy: 0.5), radius)); ctx.strokePath()
+    if boardExpand > 0.02 {
+        ctx.setStrokeColor(hairline.copy(alpha: boardExpand)!); ctx.setLineWidth(1)
+        ctx.addPath(notchPath(panel.insetBy(dx: 0.5, dy: 0.5), radius)); ctx.strokePath()
     }
 
-    // ── Pill row (always drawn, at the top) ──
-    let rowCy = CGFloat(H) - pillH / 2
+    // ── Header / pill row ──
     let padL = x + 16
-
-    // State for the pill.
-    let working = t >= 1.0 && t < 3.0 || t >= 5.85
-    let cord = t >= 3.0
     let idle = t < 1.0
-
-    // Lamp / equalizer.
-    if working {
-        equalizer(ctx, cx: padL + 5, cy: rowCy, size: 12, t: t, color: green)
-    } else if cord {
-        // amber, blinking
-        let blink = 0.55 + 0.45 * (sin(t * 7) > 0 ? 1.0 : 0.0)
-        dot(ctx, cx: padL + 4, cy: rowCy, size: 9, color: amber, glow: 0.9 * blink)
+    if idle {
+        dot(ctx, cx: padL + 4, cy: CGFloat(H) - pillH / 2, size: 8, color: red)
+        text(ctx, "Idle", padL + 18, pillH / 2 - 6, size: 12, color: textTertiary, weight: .medium)
     } else {
-        dot(ctx, cx: padL + 4, cy: rowCy, size: 8, color: red)
+        ctx.setFillColor(amber); ctx.fill(rTL(padL, pillH / 2 - 6, 3, 11))
+        ctx.setFillColor(green); ctx.fill(rTL(padL + 5, pillH / 2 - 6, 3, 11))
+        text(ctx, "ANDONCORD", padL + 14, pillH / 2 - 5, size: 10, color: textSecondary, weight: .semibold, tracking: 1.2)
+        let count = cordPulled ? "1 waiting · 2 running" : "2 running"
+        text(ctx, count, x + w - 16 - tw(count, size: 10, mono: true), pillH / 2 - 5, size: 10, color: textTertiary, mono: true)
     }
 
-    // Title.
-    let title = idle ? "Idle" : "fix auth in middleware.ts"
-    let titleColor = idle ? textTertiary : textPrimary
-    text(ctx, title, padL + 18, pillH / 2 - 6, size: 12, color: titleColor, weight: .medium)
+    guard boardExpand > 0.25 else { return }
+    ctx.saveGState(); ctx.setAlpha(ramp(t, 1.3, 1.7))
+    ctx.setFillColor(hairline); ctx.fill(rTL(x, pillH, w, 1))
 
-    // Trailing: cord badge / timer + meter.
-    var trailX = x + w - 16
-    // usage meter
-    let meterW: CGFloat = 5 * 5 + 4 * 1.5
-    trailX -= meterW
-    meter(ctx, x: trailX, cy: rowCy, fraction: 0.42, color: green)
-    trailX -= 12
+    var y = pillH + 8
+    sessionRow(ctx, x: x, top: y, width: w, t: t,
+               agentLabel: "CC", agentTint: claudeTint, title: "fix auth in middleware.ts",
+               terminal: "iTerm2", seconds: 12 + Int(t), cord: false,
+               status: Int(t) % 2 == 0 ? "Edit(middleware.ts)" : "Running…")
+    y += 46
+    ctx.setFillColor(hairline.copy(alpha: 0.5)!); ctx.fill(rTL(x + 30, y - 2, w - 44, 1))
+    sessionRow(ctx, x: x, top: y, width: w, t: t + 0.7,
+               agentLabel: "CX", agentTint: codexTint, title: "add unit tests for parser",
+               terminal: "Ghostty", seconds: 8 + Int(t), cord: cordPulled,
+               status: cordPulled ? "Waiting on you — Bash" : (Int(t) % 2 == 0 ? "apply_patch" : "Running…"))
+    y += 48
+    ctx.restoreGState()
 
-    if cord {
-        let label = "CORD"
-        let bw = textWidth(label, size: 9, weight: .semibold) + 12
-        trailX -= bw
-        let br = rTL(trailX, pillH / 2 - 8, bw, 16)
-        ctx.setFillColor(amber); ctx.addPath(roundedPath(br, 4)); ctx.fillPath()
-        text(ctx, label, trailX + 6, pillH / 2 - 6, size: 9, color: void, weight: .semibold, tracking: 0.6)
-    } else if working {
-        let secs = Int(t - 1.0)
-        let label = "\(secs)s"
-        let tw = textWidth(label, size: 10, mono: true)
-        trailX -= tw
-        text(ctx, label, trailX, pillH / 2 - 5, size: 10, color: green, weight: .medium, mono: true)
-    }
+    // ── Codex permission card ──
+    if showCard {
+        let ca = ramp(t, 5.2, 5.6) * (1 - ramp(t, 7.3, 7.55))
+        ctx.saveGState(); ctx.setAlpha(ca)
+        ctx.setFillColor(hairline); ctx.fill(rTL(x, y, w, 1))
+        let cardTop = y + 1
+        ctx.setFillColor(amber.copy(alpha: 0.07)!); ctx.fill(rTL(x, cardTop, w, boardH - cardTop - 4))
+        ctx.setFillColor(amber.copy(alpha: 0.9)!); ctx.fill(rTL(x, cardTop, 2, boardH - cardTop - 4))
 
-    // ── Expanded permission card ──
-    if expand > 0.3 {
-        let a = ramp(t, 3.6, 4.0)
-        ctx.saveGState()
-        ctx.setAlpha(a * (1 - ramp(t, 5.55, 5.85)))
-
-        var y = pillH + 6
-        // Amber left rule.
-        ctx.setFillColor(amber.copy(alpha: 0.9)!)
-        ctx.fill(rTL(x, y, 2, panelH - y - 8))
-
-        // header
-        dot(ctx, cx: x + 20, cy: CGFloat(H) - y - 10, size: 7, color: amber, glow: 0.9)
-        text(ctx, "CORD PULLED · PERMISSION", x + 30, y + 5, size: 10, color: amber, weight: .semibold, tracking: 0.8)
-        let sess = "fix auth in middleware.ts"
-        text(ctx, sess, x + w - 16 - textWidth(sess, size: 10), y + 6, size: 10, color: textTertiary)
-        y += 26
-
-        // tool + subtitle
-        text(ctx, "Edit", x + 16, y, size: 13, color: textPrimary, weight: .semibold)
-        text(ctx, "auth/middleware.ts", x + 16 + textWidth("Edit ", size: 13, weight: .semibold), y + 1,
+        var cy = cardTop + 11
+        dot(ctx, cx: x + 20, cy: CGFloat(H) - cy - 8, size: 7, color: amber, glow: 0.9)
+        text(ctx, "CORD PULLED · PERMISSION", x + 30, cy + 3, size: 10, color: amber, weight: .semibold, tracking: 0.8)
+        let bw = badge(ctx, "CX", x: x + w - 16 - 96, cy: CGFloat(H) - cy - 8, tint: codexTint)
+        text(ctx, "add unit tests", x + w - 16 - 96 + bw + 6, cy + 3, size: 10, color: textTertiary)
+        cy += 25
+        text(ctx, "Bash", x + 16, cy, size: 13, color: textPrimary, weight: .semibold)
+        text(ctx, "npm test -- --coverage", x + 16 + tw("Bash ", size: 13, weight: .semibold), cy + 1,
              size: 11, color: textSecondary, mono: true)
-        y += 22
-
-        // diff box
-        let diffRect = rTL(x + 16, y, w - 32, 66)
-        ctx.setFillColor(surface); ctx.addPath(roundedPath(diffRect, 6)); ctx.fillPath()
-        let diffLines: [(String, String, CGColor)] = [
-            ("−", "  jwt.verify(token);", red),
-            ("+", "  if (!token) throw new AuthError('missing');", green),
-            ("+", "  return jwt.verify(token, SECRET);", green),
-        ]
-        var dy = y + 8
-        for (sign, code, col) in diffLines {
-            ctx.setFillColor(col.copy(alpha: 0.10)!)
-            ctx.fill(rTL(x + 20, dy, w - 40, 18))
-            text(ctx, sign, x + 26, dy + 2, size: 10, color: col, mono: true)
-            text(ctx, code, x + 40, dy + 2, size: 10, color: textPrimary.copy(alpha: 0.9)!, mono: true)
-            dy += 19
-        }
-        y += 66 + 12
-
-        // buttons
-        let allowHi = t >= 5.2 && t < 5.6
-        let dw = pillButton(ctx, "Deny", x: x + 16, top: y, tint: red, prominent: false)
-        _ = pillButton(ctx, "Allow", x: x + 16 + dw + 8, top: y, tint: green, prominent: true, highlight: allowHi)
-        text(ctx, "⌘Y / ⌘N", x + w - 16 - textWidth("⌘Y / ⌘N", size: 9, mono: true), y + 8,
-             size: 9, color: textTertiary, mono: true)
-
+        cy += 23
+        let box = rTL(x + 16, cy, w - 32, 30)
+        ctx.setFillColor(surface); ctx.addPath(roundedPath(box, 6)); ctx.fillPath()
+        text(ctx, "npm test -- --coverage", x + 24, cy + 8, size: 11, color: textPrimary, mono: true)
+        cy += 44
+        let dw = pillButton(ctx, "Deny", x: x + 16, top: cy, tint: red, prominent: false)
+        _ = pillButton(ctx, "Allow", x: x + 16 + dw + 8, top: cy, tint: green, prominent: true,
+                       highlight: t >= 6.9 && t < 7.3)
+        text(ctx, "⌘Y / ⌘N", x + w - 16 - tw("⌘Y / ⌘N", size: 9, mono: true), cy + 8, size: 9, color: textTertiary, mono: true)
         ctx.restoreGState()
     }
 }
@@ -306,35 +246,24 @@ func drawFrame(_ ctx: CGContext, t: Double) {
 // MARK: - Render GIF
 
 let fps = 18
-let duration = 6.4
+let duration = 8.0
 let frameCount = Int(duration * Double(fps))
 let delay = 1.0 / Double(fps)
 
 let outURL = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp/andon-demo.gif")
-guard let dest = CGImageDestinationCreateWithURL(
-    outURL as CFURL, UTType.gif.identifier as CFString, frameCount, nil) else {
+guard let dest = CGImageDestinationCreateWithURL(outURL as CFURL, UTType.gif.identifier as CFString, frameCount, nil) else {
     fatalError("cannot create gif")
 }
-let gifProps = [kCGImagePropertyGIFDictionary as String: [kCGImagePropertyGIFLoopCount as String: 0]]
-CGImageDestinationSetProperties(dest, gifProps as CFDictionary)
+CGImageDestinationSetProperties(dest, [kCGImagePropertyGIFDictionary as String:
+    [kCGImagePropertyGIFLoopCount as String: 0]] as CFDictionary)
 let frameProps = [kCGImagePropertyGIFDictionary as String: [kCGImagePropertyGIFDelayTime as String: delay]]
-
 let cs = CGColorSpaceCreateDeviceRGB()
 for i in 0..<frameCount {
     let t = Double(i) / Double(fps)
-    guard let ctx = CGContext(data: nil, width: pxW, height: pxH, bitsPerComponent: 8,
-                              bytesPerRow: 0, space: cs,
-                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { continue }
-    ctx.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
-    ctx.setShouldAntialias(true)
-    ctx.setAllowsFontSmoothing(true)
+    guard let ctx = CGContext(data: nil, width: pxW, height: pxH, bitsPerComponent: 8, bytesPerRow: 0,
+                              space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { continue }
+    ctx.scaleBy(x: CGFloat(scale), y: CGFloat(scale)); ctx.setShouldAntialias(true)
     drawFrame(ctx, t: t)
-    if let img = ctx.makeImage() {
-        CGImageDestinationAddImage(dest, img, frameProps as CFDictionary)
-    }
+    if let img = ctx.makeImage() { CGImageDestinationAddImage(dest, img, frameProps as CFDictionary) }
 }
-if CGImageDestinationFinalize(dest) {
-    print("wrote \(outURL.path) (\(frameCount) frames)")
-} else {
-    print("finalize failed")
-}
+print(CGImageDestinationFinalize(dest) ? "wrote \(outURL.path) (\(frameCount) frames)" : "finalize failed")

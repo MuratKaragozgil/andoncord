@@ -37,6 +37,19 @@ enum AndonTheme {
     static let accent = Color(red: 0.851, green: 0.467, blue: 0.341)
     static let inactive = Color(red: 0.290, green: 0.267, blue: 0.227)
 
+    /// Per-agent tint for the identity badge.
+    ///
+    /// Kept away from the signal colours (green/amber/red) on purpose — the
+    /// lamp already owns those, so the agent badge uses a separate hue family
+    /// and never competes with "is it working / does it need me".
+    static func agentTint(_ agent: AgentSource) -> Color {
+        switch agent {
+        case .claude: return Color(red: 0.827, green: 0.510, blue: 0.361)   // terracotta
+        case .codex: return Color(red: 0.478, green: 0.686, blue: 0.937)    // sky blue
+        case .unknown: return textTertiary
+        }
+    }
+
     /// Andon-board colour semantics: green only while the line is actually
     /// moving, amber when a person is needed, red whenever nothing is running —
     /// idle, finished, or stopped alike. The point is a binary you can read at
@@ -187,6 +200,31 @@ struct DotLamp: View {
                 value: dim)
             .onAppear { dim = alerting }
             .onChange(of: alerting) { _, new in dim = new }
+    }
+}
+
+/// Which agent a session belongs to — a tinted two-letter tag.
+///
+/// Small and quiet by default so a board of same-agent sessions is not noisy,
+/// but tinted distinctly enough that a mixed board (Claude + Codex at once)
+/// reads apart instantly.
+struct AgentBadge: View {
+    let agent: AgentSource
+    var size: CGFloat = 9
+
+    var body: some View {
+        let tint = AndonTheme.agentTint(agent)
+        Text(agent.badge)
+            .font(AndonTheme.numeric(size, weight: .bold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1.5)
+            .background {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(tint.opacity(0.16))
+            }
+            .fixedSize()
+            .help(agent.displayName)
     }
 }
 

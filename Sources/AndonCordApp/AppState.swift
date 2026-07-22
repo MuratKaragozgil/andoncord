@@ -18,6 +18,7 @@ final class AppState {
     let board = BoardStore()
     let settings = AndonSettings()
     let installer = ClaudeSettingsInstaller()
+    let codexInstaller = CodexHooksInstaller()
 
     @ObservationIgnored
     private let server = HookServer()
@@ -27,6 +28,7 @@ final class AppState {
     /// Surfaced in the menu bar and settings so a broken install is visible
     /// rather than presenting as "the app just doesn't work".
     private(set) var installStatus: ClaudeSettingsInstaller.Status = .notInstalled
+    private(set) var codexStatus: CodexHooksInstaller.Status = .notInstalled
     private(set) var serverError: String?
     /// Set when another copy of the app already owns the socket.
     private(set) var duplicateInstancePID: pid_t?
@@ -102,11 +104,40 @@ final class AppState {
 
     func refreshInstallStatus() {
         installStatus = installer.currentStatus()
+        codexStatus = codexInstaller.currentStatus()
     }
 
     var isIntegrationHealthy: Bool {
         if case .installed = installStatus { return serverError == nil }
         return false
+    }
+
+    var isCodexInstalled: Bool {
+        if case .installed = codexStatus { return true }
+        return false
+    }
+
+    @discardableResult
+    func installCodex() -> Result<CodexHooksInstaller.Report, Error> {
+        do {
+            let report = try codexInstaller.install()
+            refreshInstallStatus()
+            return .success(report)
+        } catch {
+            AndonLog.ui.error("Codex install failed: \(error.localizedDescription)")
+            return .failure(error)
+        }
+    }
+
+    @discardableResult
+    func removeCodex() -> Result<URL?, Error> {
+        do {
+            let backup = try codexInstaller.uninstall()
+            refreshInstallStatus()
+            return .success(backup)
+        } catch {
+            return .failure(error)
+        }
     }
 
     @discardableResult

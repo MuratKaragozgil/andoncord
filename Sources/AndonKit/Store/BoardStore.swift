@@ -106,8 +106,12 @@ public final class BoardStore {
             return
         }
         let payload = envelope.payload
-        var session = sessions[sessionId] ?? makeSession(id: sessionId, payload: payload)
+        var session = sessions[sessionId]
+            ?? makeSession(id: sessionId, agent: envelope.agentSource, payload: payload)
 
+        // A real agent tag always wins over a placeholder, so a session first
+        // seen through an untagged event gets corrected once a tagged one lands.
+        if envelope.agentSource != .unknown { session.agent = envelope.agentSource }
         session.lastActivityAt = envelope.receivedAt
         if let cwd = payload.cwd { session.cwd = cwd }
         if let path = payload.transcriptPath { session.transcriptPath = path }
@@ -223,9 +227,10 @@ public final class BoardStore {
         sessions[sessionId] = session
     }
 
-    private func makeSession(id: String, payload: HookPayload) -> Session {
+    private func makeSession(id: String, agent: AgentSource, payload: HookPayload) -> Session {
         Session(
             id: id,
+            agent: agent,
             title: payload.sessionTitle
                 ?? payload.cwd.map { URL(fileURLWithPath: $0).lastPathComponent }
                 ?? "Session",

@@ -49,11 +49,19 @@ func currentTTYPath() -> String? {
 
 // MARK: - Argument parsing
 
-let arguments = CommandLine.arguments.dropFirst()
+let arguments = Array(CommandLine.arguments.dropFirst())
 let isStatusline = arguments.contains("--statusline")
 /// Set by the installer only on the hooks where a human decision is expected,
 /// so the common path never waits on a reply.
 let isBlocking = arguments.contains("--blocking")
+
+/// `--source claude|codex`, written into each hook command by the installer.
+/// Absent → `.claude`, since that is the only agent an un-tagged hook could be.
+let agentSource: AgentSource = {
+    guard let index = arguments.firstIndex(of: "--source"),
+          index + 1 < arguments.count else { return .claude }
+    return AgentSource(argument: arguments[index + 1])
+}()
 
 // MARK: - Read stdin
 
@@ -114,6 +122,7 @@ let terminal = TerminalContext.capture(
 
 let envelope = HookEnvelope(
     blocking: isBlocking,
+    agentSource: agentSource,
     payload: payload,
     raw: raw,
     terminal: terminal,

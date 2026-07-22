@@ -21,6 +21,8 @@ struct SessionRowView: View {
             HStack(spacing: 9) {
                 AndonLamp(state: session.state)
 
+                AgentBadge(agent: session.agent)
+
                 Text(session.title)
                     .font(AndonTheme.body(12, weight: .medium))
                     .foregroundStyle(AndonTheme.textPrimary)

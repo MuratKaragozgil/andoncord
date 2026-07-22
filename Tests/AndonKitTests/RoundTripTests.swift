@@ -56,11 +56,13 @@ final class RoundTripTests: XCTestCase {
     /// Launch the shim with HOME pointed at the sandbox so it resolves the
     /// same socket the server is listening on.
     private func launchHook(
-        payload: String, blocking: Bool
+        payload: String, blocking: Bool, source: String? = nil
     ) throws -> (process: Process, stdout: Pipe) {
         let process = Process()
         process.executableURL = hookBinary
-        process.arguments = blocking ? ["--blocking"] : []
+        var args = blocking ? ["--blocking"] : []
+        if let source { args += ["--source", source] }
+        process.arguments = args
 
         var environment = ProcessInfo.processInfo.environment
         // NSHomeDirectory ignores $HOME, so the shim needs the explicit override.
@@ -154,6 +156,37 @@ final class RoundTripTests: XCTestCase {
             data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         XCTAssertTrue(output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                       "no decision means Claude Code asks in the terminal instead")
+    }
+
+    @MainActor
+    func testCodexSourcedHookTagsTheSessionAsCodex() async throws {
+        let board = BoardStore()
+        server = HookServer()
+        server.onEvent = { envelope, decision in
+            MainActor.assumeIsolated { board.apply(envelope, decision: decision) }
+        }
+        try server.start()
+
+        // Same shim, same socket — only the --source arg differs.
+        let payload = """
+        {"session_id":"cx-1","cwd":"/tmp/proj","hook_event_name":"UserPromptSubmit",\
+        "user_message":"add a test"}
+        """
+        let (process, _) = try launchHook(payload: payload, blocking: false, source: "codex")
+        process.waitUntilExit()
+
+        try await waitUntil("codex session created") { board.session(id: "cx-1") != nil }
+        XCTAssertEqual(board.session(id: "cx-1")?.agent, .codex,
+                       "a --source codex hook must tag its session as Codex")
+
+        // And a Claude hook on the same socket stays Claude — the two coexist.
+        let (p2, _) = try launchHook(
+            payload: #"{"session_id":"cc-1","hook_event_name":"UserPromptSubmit","user_message":"x"}"#,
+            blocking: false, source: "claude")
+        p2.waitUntilExit()
+        try await waitUntil("claude session created") { board.session(id: "cc-1") != nil }
+        XCTAssertEqual(board.session(id: "cc-1")?.agent, .claude)
+        XCTAssertEqual(board.sessions.count, 2, "both agents on one board")
     }
 
     func testShimFailsOpenWhenNothingIsListening() throws {

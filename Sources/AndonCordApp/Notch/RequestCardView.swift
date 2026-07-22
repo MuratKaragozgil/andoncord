@@ -56,6 +56,7 @@ struct RequestCardView: View {
 
             Spacer(minLength: 4)
 
+            AgentBadge(agent: session.agent)
             Text(session.title)
                 .font(AndonTheme.body(10))
                 .foregroundStyle(AndonTheme.textTertiary)
@@ -66,7 +67,7 @@ struct RequestCardView: View {
     private var headline: String {
         switch request.kind {
         case .permission: return "CORD PULLED · PERMISSION"
-        case .question: return "CLAUDE ASKS"
+        case .question: return "\(session.agent.displayName.uppercased()) ASKS"
         case .plan: return "PLAN REVIEW"
         }
     }

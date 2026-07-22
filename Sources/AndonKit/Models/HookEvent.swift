@@ -128,6 +128,10 @@ public struct HookEnvelope: Codable, Sendable {
     public var protocolVersion: Int
     /// True when the shim is holding the hook open awaiting our decision.
     public var blocking: Bool
+    /// Which agent this came from, tagged by the shim's `--source` argument.
+    /// Defaults to `.claude` when absent so envelopes from an older shim (which
+    /// only ever handled Claude) still decode correctly.
+    public var agentSource: AgentSource
     public var payload: HookPayload
     /// The full original object, so the UI can surface fields we do not model.
     public var raw: JSONValue
@@ -138,6 +142,7 @@ public struct HookEnvelope: Codable, Sendable {
     public init(
         protocolVersion: Int = HookEnvelope.currentProtocolVersion,
         blocking: Bool,
+        agentSource: AgentSource = .claude,
         payload: HookPayload,
         raw: JSONValue,
         terminal: TerminalContext?,
@@ -146,11 +151,30 @@ public struct HookEnvelope: Codable, Sendable {
     ) {
         self.protocolVersion = protocolVersion
         self.blocking = blocking
+        self.agentSource = agentSource
         self.payload = payload
         self.raw = raw
         self.terminal = terminal
         self.shimPid = shimPid
         self.receivedAt = receivedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case protocolVersion, blocking, agentSource, payload, raw, terminal
+        case shimPid, receivedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        protocolVersion = try c.decode(Int.self, forKey: .protocolVersion)
+        blocking = try c.decode(Bool.self, forKey: .blocking)
+        // Absent on envelopes from a shim that predates multi-agent support.
+        agentSource = try c.decodeIfPresent(AgentSource.self, forKey: .agentSource) ?? .claude
+        payload = try c.decode(HookPayload.self, forKey: .payload)
+        raw = try c.decode(JSONValue.self, forKey: .raw)
+        terminal = try c.decodeIfPresent(TerminalContext.self, forKey: .terminal)
+        shimPid = try c.decode(Int32.self, forKey: .shimPid)
+        receivedAt = try c.decode(Date.self, forKey: .receivedAt)
     }
 }
 

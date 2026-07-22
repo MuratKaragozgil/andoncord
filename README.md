@@ -4,19 +4,19 @@
 
 # AndonCord
 
-**Claude Code sessions on your Mac's notch.**
+**Claude Code & Codex sessions on your Mac's notch.**
 Approve tool calls, answer questions, and review plans — without leaving your editor.
 
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-black)
 ![Swift](https://img.shields.io/badge/swift-6.0-F05138)
-![Tests](https://img.shields.io/badge/tests-48%20passing-3FB950)
+![Tests](https://img.shields.io/badge/tests-58%20passing-3FB950)
 ![Privacy](https://img.shields.io/badge/telemetry-none-blue)
 
 <br>
 
-<img src="docs/demo.gif" width="620" alt="AndonCord in action: idle, working, cord pulled, permission card">
+<img src="docs/demo.gif" width="640" alt="AndonCord: Claude Code and Codex running together, then Codex pulls the cord for a permission">
 
-<sub>Idle → working (live equalizer, ticking timer) → cord pulled → approve a tool call, in the notch.</sub>
+<sub>Claude Code (CC) and Codex (CX) running side by side on the board — then Codex pulls the cord and you approve, in the notch.</sub>
 
 </div>
 
@@ -28,10 +28,12 @@ status at a glance. That is exactly what this app is: Claude Code pulls the
 cord when it needs you, the board in your notch lights up, you answer, the
 line resumes.
 
-Claude-Code-only, on purpose. One agent supported deeply beats twenty supported
-shallowly — it is what lets the permission card show a real diff, the plan
-reviewer render real Markdown, and questions get answered from the notch
-instead of just being announced.
+**Claude Code and Codex**, integrated deeply rather than broadly. Both expose
+almost the same hook contract — the same event names, the same stdin-JSON, the
+same decision format — so AndonCord speaks to each one natively: the permission
+card shows a real diff, questions get answered from the notch instead of just
+announced, and a mixed board tells the two apart at a glance (`CC` for Claude
+Code, `CX` for Codex). Deep beats broad — one shim, one socket, two agents.
 
 ## What it does
 
@@ -51,9 +53,13 @@ The board reads like an andon board — colour and motion first, text second:
 
 | Lamp | Meaning |
 |---|---|
-| 🟢 bouncing equalizer + ticking timer | the line is moving — Claude is working |
+| 🟢 bouncing equalizer + ticking timer | the line is moving — the agent is working |
 | 🟠 hard blink + `CORD` badge | cord pulled — a decision is waiting on you |
 | 🔴 steady dot | stopped — idle, finished, or failed |
+
+Each session also carries a tinted agent badge — `CC` (Claude Code) or `CX`
+(Codex) — so a board with both agents running never leaves you guessing which
+one just pulled the cord.
 
 If it's green and moving, it's working. If it's red and still, it isn't.
 There is no state where a dead session can impersonate a live one: sessions
@@ -69,17 +75,25 @@ cp -R "build/AndonCord.app" /Applications/
 open /Applications/AndonCord.app
 ```
 
-First launch walks you through setup. It will, with your consent:
+First launch walks you through Claude Code setup, and **Settings** has a Codex
+row you can enable separately. With your consent AndonCord will:
 
-- add hook entries to `~/.claude/settings.json` — **alongside** anything already
-  there; other tools' hooks keep running
-- point `statusLine` at a wrapper that **chains to your existing statusline**,
-  so its output keeps rendering
+- **Claude Code** — add hook entries to `~/.claude/settings.json`, **alongside**
+  anything already there, and point `statusLine` at a wrapper that **chains to
+  your existing statusline** so its output keeps rendering
+- **Codex** — add hooks to `~/.codex/hooks.json`, a file that is separate from
+  `config.toml` and additive by design, so your existing Codex config and
+  `notify` command are left untouched
 - create `~/.andoncord/` for the local socket, the hook launcher, and a
-  timestamped backup of `settings.json` taken before every change
+  timestamped backup taken before every change
 
-**Settings → Remove** puts everything back exactly as it was. Already-running
-Claude Code sessions need a restart before hooks apply.
+Each integration is independent — run one, the other, or both. **Settings →
+Remove** puts each file back exactly as it was; only entries carrying our marker
+are touched. Already-running sessions need a restart before hooks apply.
+
+> **Codex note:** hooks are a recent, sometimes-gated Codex feature. If Codex
+> sessions don't appear, enable it with `[features] hooks = true` in
+> `~/.codex/config.toml` — the Settings row detects this and tells you.
 
 > Builds are ad-hoc signed. On a machine other than the one that built it,
 > Gatekeeper will complain — right-click → Open, or build it yourself.
@@ -87,11 +101,20 @@ Claude Code sessions need a restart before hooks apply.
 ## How it works
 
 ```
-Claude Code ──spawns──▶ andon-hook ──unix socket──▶ AndonCord.app
-   (hooks)              (the shim)                   (the board)
+Claude Code ┐
+            ├─spawns─▶ andon-hook ──unix socket──▶ AndonCord.app
+Codex       ┘        (--source tags     one socket, (the board)
+   (hooks)            the agent)        both agents
       ▲                                                   │
       └──────────── decision JSON on stdout ◀─────────────┘
 ```
+
+Both agents run the **same shim** over the **same socket**; a `--source`
+argument written into each hook command is all that distinguishes them. Because
+Claude Code and Codex share the hook payload shape and the decision format, the
+board, the request cards, and the approval round trip are entirely
+agent-agnostic — adding Codex was a matter of *where* the hooks install, not
+*how* they are handled.
 
 **The shim is a real process, not an HTTP callback — deliberately.** Claude
 Code spawns it as a child of your shell, so it inherits the controlling TTY and
@@ -143,7 +166,7 @@ feedback loop is structurally impossible.
 Sources/
   AndonKit/            # models, socket, installer, store — no AppKit
     Server/            # HookServer, SocketTransport, PendingDecision
-    Integration/       # ClaudeSettingsInstaller, LauncherWriter, JSONC
+    Integration/       # ClaudeSettingsInstaller, CodexHooksInstaller, JSONC
     Store/             # BoardStore — the state machine + session reaper
     Audio/             # ChiptuneEngine — synthesized 8-bit cues
   andon-hook/          # the shim: tiny, fail-open, terminal-aware
@@ -166,7 +189,7 @@ drift from the palette the board uses.
 
 ```bash
 swift build --product andon-hook   # RoundTripTests spawn the real shim
-swift test                         # 48 tests
+swift test                         # 58 tests
 ```
 
 The tests that matter most:
@@ -175,8 +198,11 @@ The tests that matter most:
   a real Unix socket and assert on what it prints to stdout, which is the only
   thing Claude Code ever reads. Covers the approval round trip,
   release-on-session-end, fail-open, and hot-path latency.
-- **InstallerTests** — coexistence with other tools' hooks, byte-exact
-  statusline restoration, idempotent reinstall, drift detection, JSONC comments.
+- **InstallerTests / CodexInstallerTests** — coexistence with other tools'
+  hooks in both `settings.json` and `hooks.json`, byte-exact statusline
+  restoration, idempotent reinstall, drift detection, and Codex feature-flag
+  detection. A round-trip test confirms a `--source codex` hook tags its
+  session as Codex while a Claude hook on the same socket stays Claude.
 - **BoardStoreTests / ReapingTests** — every code path releases its parked
   hook (a leak here is someone's hung session), and dead sessions are reaped
   by pid liveness while parked requests are never swept.
@@ -195,7 +221,10 @@ as text instead of guesswork.
   are identified by the launching bundle and a click raises Claude.
 - **Quota needs an interactive session** — `claude -p` never renders a
   statusline, so the usage strip stays empty until you run `claude` in a
-  terminal.
+  terminal. (Codex quota is not surfaced; there is no equivalent statusline.)
+- **Codex hooks are version-gated** — the feature is recent and, on some
+  builds, off by default. AndonCord installs the hooks and detects the flag,
+  but cannot flip it for you.
 - First precise jump prompts for **Automation** permission (iTerm2 /
   Terminal.app only). Denying it degrades to app activation.
 - No SSH-remote sessions, no auto-update, ad-hoc signing only.
@@ -203,6 +232,7 @@ as text instead of guesswork.
 ## Credits
 
 Inspired by [Vibe Island](https://vibeisland.app), which supports 26 agents.
-AndonCord is the opposite bet: one agent, integrated as deeply as the hooks
-allow. Built with [Claude Code](https://claude.com/claude-code) — the tool it
-watches.
+AndonCord is the opposite bet: a small, deliberately chosen set of agents —
+Claude Code and Codex — integrated as deeply as their hooks allow, rather than
+many wired up shallowly. Built with
+[Claude Code](https://claude.com/claude-code) — one of the tools it watches.

@@ -30,6 +30,7 @@ struct SettingsView: View {
     private var groups: some View {
         VStack(alignment: .leading, spacing: 22) {
             integrationGroup
+            codexGroup
             behaviourGroup
             soundGroup
             aboutGroup
@@ -176,6 +177,106 @@ struct SettingsView: View {
         case .drifted(let reason): return reason
         case .settingsUnreadable(let reason): return reason
         }
+    }
+
+    // MARK: - Codex
+
+    @State private var codexError: String?
+    @State private var confirmingCodexRemoval = false
+
+    private var codexGroup: some View {
+        SettingsGroup("Codex") {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(codexColor)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: codexColor.opacity(0.7), radius: 3)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(codexTitle)
+                            .font(AndonTheme.body(13, weight: .medium))
+                            .foregroundStyle(AndonTheme.textPrimary)
+                        if let sub = codexSubtitle {
+                            Text(sub)
+                                .font(AndonTheme.body(11))
+                                .foregroundStyle(AndonTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if app.isCodexInstalled {
+                        Button("Remove") { confirmingCodexRemoval = true }
+                            .buttonStyle(AndonButtonStyle(tint: AndonTheme.red))
+                    } else {
+                        Button("Set up") { installCodex() }
+                            .buttonStyle(AndonButtonStyle(
+                                tint: AndonTheme.agentTint(.codex), prominent: true))
+                    }
+                }
+                .padding(14)
+
+                if let codexError {
+                    RowDivider()
+                    Text(codexError)
+                        .font(AndonTheme.body(11))
+                        .foregroundStyle(AndonTheme.red)
+                        .padding(14)
+                }
+            }
+        } footer: {
+            "Adds hooks to ~/.codex/hooks.json — separate from config.toml, so your "
+                + "existing Codex settings and notify command are left untouched."
+        }
+        .alert("Remove AndonCord's Codex hooks?", isPresented: $confirmingCodexRemoval) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) { removeCodex() }
+        } message: {
+            Text("Codex will stop reporting to the board. Your other Codex hooks, if "
+                 + "any, are left in place.")
+        }
+    }
+
+    private var codexColor: Color {
+        switch app.codexStatus {
+        case .installed: return AndonTheme.green
+        case .notInstalled: return AndonTheme.inactive
+        case .drifted: return AndonTheme.amber
+        case .fileUnreadable: return AndonTheme.red
+        }
+    }
+
+    private var codexTitle: String {
+        switch app.codexStatus {
+        case .installed: return "Connected"
+        case .notInstalled: return "Not set up"
+        case .drifted: return "Needs repair"
+        case .fileUnreadable: return "Can't read hooks.json"
+        }
+    }
+
+    private var codexSubtitle: String? {
+        switch app.codexStatus {
+        case .installed:
+            return app.codexInstaller.hooksFeatureDisabled()
+                ? "Installed, but hooks are disabled in config.toml — set [features] hooks = true."
+                : "Codex is reporting to the board."
+        case .notInstalled: return "Watch Codex sessions alongside Claude Code."
+        case .drifted(let reason): return reason
+        case .fileUnreadable(let reason): return reason
+        }
+    }
+
+    private func installCodex() {
+        codexError = nil
+        if case .failure(let error) = app.installCodex() { codexError = error.localizedDescription }
+    }
+
+    private func removeCodex() {
+        codexError = nil
+        if case .failure(let error) = app.removeCodex() { codexError = error.localizedDescription }
     }
 
     // MARK: - Behaviour
