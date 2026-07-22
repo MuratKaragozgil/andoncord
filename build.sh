@@ -82,14 +82,55 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature. Enough for local use; without a Developer ID signature
-# plus notarisation, downloaded copies need the Gatekeeper steps in the README.
-echo "▸ Signing (ad-hoc)…"
-codesign --force --deep --sign - "$APP" 2>/dev/null
+# Developer ID when the keychain has one (that is what makes downloaded
+# copies open cleanly), ad-hoc otherwise — local builds don't need more.
+IDENTITY="${ANDON_SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
+  | awk -F'"' '/Developer ID Application/ {print $2; exit}')}"
+if [ -n "$IDENTITY" ]; then
+  echo "▸ Signing ($IDENTITY)…"
+  # Nested binary first, then the bundle seals it. The hardened runtime is a
+  # notarisation requirement; the entitlement re-allows the Apple events that
+  # precise terminal jump sends (the runtime blocks them by default).
+  codesign --force --options runtime --timestamp --sign "$IDENTITY" \
+    "$APP/Contents/MacOS/andon-hook"
+  codesign --force --options runtime --timestamp \
+    --entitlements "$ROOT/Tools/AndonCord.entitlements" \
+    --sign "$IDENTITY" "$APP"
+else
+  echo "▸ Signing (ad-hoc)…"
+  codesign --force --deep --sign - "$APP" 2>/dev/null
+fi
 
 echo "▸ Built $APP"
 
 if [ -n "$MAKE_DMG" ]; then
+  PROFILE="${ANDON_NOTARY_PROFILE:-andoncord}"
+  NOTARIZE=""
+  if [ -n "$IDENTITY" ]; then
+    if xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
+      NOTARIZE=1
+    else
+      echo "✗ Developer ID found but no notary credentials."
+      echo "  One-time setup:  xcrun notarytool store-credentials $PROFILE \\"
+      echo "                     --apple-id <apple-id> --team-id <team-id>"
+      echo "  (asks for an app-specific password from account.apple.com)"
+      exit 1
+    fi
+  fi
+
+  if [ -n "$NOTARIZE" ]; then
+    # Notarise and staple the app itself first, so the copy users drag out of
+    # the image passes Gatekeeper even offline; then the image gets its own
+    # ticket. Two submissions, but the second one is near-instant.
+    echo "▸ Notarising app (takes a minute or two)…"
+    ZIP="$ROOT/build/$APP_NAME-notary.zip"
+    rm -f "$ZIP"
+    ditto -c -k --keepParent "$APP" "$ZIP"
+    xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait
+    xcrun stapler staple "$APP"
+    rm -f "$ZIP"
+  fi
+
   echo "▸ Packaging DMG…"
   STAGING="$ROOT/build/dmg-staging"
   DMG="$ROOT/build/$APP_NAME.dmg"
@@ -100,6 +141,13 @@ if [ -n "$MAKE_DMG" ]; then
   hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGING" \
     -format UDZO -fs HFS+ -ov -quiet "$DMG"
   rm -rf "$STAGING"
+
+  if [ -n "$NOTARIZE" ]; then
+    codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+    echo "▸ Notarising DMG…"
+    xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+    xcrun stapler staple "$DMG"
+  fi
   echo "▸ Packaged $DMG"
 fi
 
