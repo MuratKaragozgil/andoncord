@@ -102,8 +102,12 @@ final class NotchController {
             _ = app.board.orderedSessions.map(\.state)
             _ = app.settings.hideWhenIdle
             _ = app.settings.autoExpandOnCord
+            _ = app.settings.preferredDisplayName
         } onChange: { [weak self] in
             Task { @MainActor in
+                // Cheap even when only board state changed: positionWindow
+                // no-ops unless the target frame actually differs.
+                self?.rebuildGeometry()
                 self?.updatePresentation()
                 self?.observeBoard()
             }
@@ -179,8 +183,13 @@ final class NotchController {
     // MARK: - Window
 
     private func rebuildGeometry() {
-        geometry = NotchGeometry.current()
+        geometry = currentGeometry()
         positionWindow()
+    }
+
+    /// Geometry resolution always goes through the user's display preference.
+    private func currentGeometry() -> NotchGeometry? {
+        NotchGeometry.current(preferredDisplayName: app?.settings.preferredDisplayName)
     }
 
     private func showPanel() {
@@ -223,7 +232,7 @@ final class NotchController {
     /// Place the fixed-size window at the top centre of the active screen.
     /// Called on creation and on display changes only — never on hover.
     private func positionWindow() {
-        guard let panel, let geo = geometry ?? NotchGeometry.current() else { return }
+        guard let panel, let geo = geometry ?? currentGeometry() else { return }
         let size = NotchPanel.fixedSize
         let frame = geo.frame(width: size.width, height: size.height)
         guard frame != panel.frame else { return }
@@ -234,7 +243,7 @@ final class NotchController {
     /// Tell the hosting view which part of itself is real, so clicks outside
     /// the drawn content pass through to whatever is behind.
     private func syncInteractiveRegion() {
-        guard let hostingView, let geo = geometry ?? NotchGeometry.current() else { return }
+        guard let hostingView, let geo = geometry ?? currentGeometry() else { return }
         let bounds = hostingView.bounds
 
         let contentSize: CGSize
@@ -281,7 +290,7 @@ final class NotchController {
     /// and much wider than it — otherwise it would stretch to fill the window
     /// and its hover region would cover the whole top of the screen.
     var pillWidth: CGFloat {
-        (geometry ?? NotchGeometry.current())?
+        (geometry ?? currentGeometry())?
             .pillWidth(shoulder: AndonTheme.Metrics.pillShoulder)
             ?? AndonTheme.Metrics.pillShoulder * 2
     }

@@ -284,6 +284,8 @@ struct SettingsView: View {
     private var behaviourGroup: some View {
         SettingsGroup("Behaviour") {
             VStack(spacing: 0) {
+                displayRow
+                RowDivider()
                 ToggleRow(
                     "Open automatically when a cord is pulled",
                     detail: "Expands the panel the moment a session needs you.",
@@ -305,6 +307,41 @@ struct SettingsView: View {
                     isOn: bind(\.launchAtLogin))
             }
         }
+    }
+
+    /// Which display the board lives on.
+    ///
+    /// Listed live from `NSScreen.screens`, plus an Automatic default. If the
+    /// chosen display is unplugged later, geometry falls back to automatic on
+    /// its own — the stored name simply stops matching until it returns.
+    private var displayRow: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Display")
+                    .font(AndonTheme.body(13))
+                    .foregroundStyle(AndonTheme.textPrimary)
+                Text("Where the board appears. Automatic prefers the built-in notch.")
+                    .font(AndonTheme.body(11))
+                    .foregroundStyle(AndonTheme.textTertiary)
+            }
+            Spacer(minLength: 12)
+            Picker("", selection: Binding(
+                get: { app.settings.preferredDisplayName },
+                set: { app.settings.preferredDisplayName = $0 })
+            ) {
+                Text("Automatic").tag(String?.none)
+                ForEach(NSScreen.screens, id: \.localizedName) { screen in
+                    let notch = screen.safeAreaInsets.top > 0 ? " (notch)" : ""
+                    Text(screen.localizedName + notch).tag(String?.some(screen.localizedName))
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .frame(maxWidth: 190)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
     }
 
     // MARK: - Sound

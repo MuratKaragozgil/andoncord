@@ -11,7 +11,7 @@ final class AndonSettings {
         static let volume = "soundVolume"
         static let autoExpand = "autoExpandOnCord"
         static let showUsage = "showUsage"
-        static let followFocusedScreen = "followFocusedScreen"
+        static let preferredDisplay = "preferredDisplayName"
         static let hideWhenIdle = "hideWhenIdle"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
         static let quietWhileFocused = "quietWhileFocused"
@@ -27,7 +27,6 @@ final class AndonSettings {
             Key.volume: 0.5,
             Key.autoExpand: true,
             Key.showUsage: true,
-            Key.followFocusedScreen: true,
             // Off by default: a pill that vanishes when the board empties made
             // "is it broken or just idle?" unanswerable. The idle pill now
             // shows a red stopped lamp instead — visible proof of both states.
@@ -71,9 +70,17 @@ final class AndonSettings {
         set { defaults.set(newValue, forKey: Key.showUsage) }
     }
 
-    var followFocusedScreen: Bool {
-        get { defaults.bool(forKey: Key.followFocusedScreen) }
-        set { defaults.set(newValue, forKey: Key.followFocusedScreen) }
+    /// Which display the board lives on, by `localizedName`. `nil` means
+    /// automatic: the built-in notched screen when present, otherwise the
+    /// screen with the pointer. Explicit choice matters for docked setups
+    /// where the notched MacBook screen is off to the side and the user
+    /// actually looks at the external monitor.
+    var preferredDisplayName: String? {
+        get { defaults.string(forKey: Key.preferredDisplay) }
+        set {
+            if let newValue { defaults.set(newValue, forKey: Key.preferredDisplay) }
+            else { defaults.removeObject(forKey: Key.preferredDisplay) }
+        }
     }
 
     /// Hide the pill entirely when nothing is running, so the notch looks

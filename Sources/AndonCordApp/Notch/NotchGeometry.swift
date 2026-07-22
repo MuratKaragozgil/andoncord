@@ -16,10 +16,21 @@ struct NotchGeometry {
 
     /// The screen the panel should live on.
     ///
-    /// Prefers the built-in display when it has a notch, because that is where
-    /// the affordance makes sense; otherwise follows the screen with the
-    /// mouse, so the board appears on whichever display is being used.
-    static func preferredScreen() -> NSScreen? {
+    /// An explicitly chosen display wins — people docking a MacBook next to a
+    /// big monitor often want the board on the monitor they actually look at,
+    /// notch or no notch. When nothing is chosen (or the chosen display is
+    /// unplugged), fall back to the built-in notched screen, then to the
+    /// screen with the pointer.
+    ///
+    /// Displays are matched by `localizedName`: it is stable across reboots
+    /// and reconnects, unlike `CGDirectDisplayID`. Two identical monitors
+    /// would collide on name and resolve to the first — an accepted trade for
+    /// not depending on deprecated display-UUID APIs.
+    static func preferredScreen(named preferredName: String? = nil) -> NSScreen? {
+        if let preferredName,
+           let chosen = NSScreen.screens.first(where: { $0.localizedName == preferredName }) {
+            return chosen
+        }
         if let notched = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
             return notched
         }
@@ -29,8 +40,8 @@ struct NotchGeometry {
             ?? NSScreen.screens.first
     }
 
-    static func current() -> NotchGeometry? {
-        guard let screen = preferredScreen() else { return nil }
+    static func current(preferredDisplayName: String? = nil) -> NotchGeometry? {
+        guard let screen = preferredScreen(named: preferredDisplayName) else { return nil }
         return NotchGeometry(screen: screen)
     }
 
