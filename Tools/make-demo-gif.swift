@@ -142,6 +142,60 @@ func sessionRow(_ ctx: CGContext, x: CGFloat, top: CGFloat, width: CGFloat, t: D
     text(ctx, status, x + 30 + bw + 8, top + 25, size: 10.5, color: cord ? amber : textSecondary)
 }
 
+// MARK: - Wallpaper
+
+/// An original macOS-style desktop, drawn from scratch.
+///
+/// Deliberately *not* one of Apple's shipped wallpapers — those are copyrighted,
+/// and this GIF lives in a public repo. This is a Sequoia-flavoured flowing
+/// gradient of the same family (deep indigo through violet into warm magenta),
+/// layered radial glows over a diagonal base, so it reads unmistakably as "a
+/// Mac desktop" without redistributing anyone's artwork.
+func drawWallpaper(_ ctx: CGContext) {
+    let full = CGRect(x: 0, y: 0, width: W, height: H)
+
+    // Diagonal base wash.
+    if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                          colors: [C(0.16, 0.12, 0.32), C(0.09, 0.07, 0.20),
+                                   C(0.05, 0.05, 0.13)] as CFArray,
+                          locations: [0, 0.55, 1]) {
+        ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: CGFloat(H)),
+                               end: CGPoint(x: CGFloat(W), y: 0), options: [])
+    }
+
+    // Soft coloured glows, blended over the base like the aurora bands Apple's
+    // gradients use. `.drawRadialGradient` fades each to transparent.
+    func glow(_ cx: CGFloat, _ cy: CGFloat, _ r: CGFloat, _ color: CGColor) {
+        ctx.saveGState()
+        ctx.setBlendMode(.plusLighter)
+        if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                              colors: [color, color.copy(alpha: 0)!] as CFArray,
+                              locations: [0, 1]) {
+            ctx.drawRadialGradient(g, startCenter: CGPoint(x: cx, y: cy), startRadius: 0,
+                                   endCenter: CGPoint(x: cx, y: cy), endRadius: r,
+                                   options: [])
+        }
+        ctx.restoreGState()
+    }
+    glow(CGFloat(W) * 0.72, CGFloat(H) * 0.30, 460, C(0.62, 0.24, 0.55, 0.55))  // magenta
+    glow(CGFloat(W) * 0.20, CGFloat(H) * 0.72, 420, C(0.20, 0.30, 0.72, 0.50))  // blue
+    glow(CGFloat(W) * 0.50, CGFloat(H) * 0.05, 360, C(0.80, 0.42, 0.34, 0.32))  // warm horizon
+    glow(CGFloat(W) * 0.92, CGFloat(H) * 0.85, 300, C(0.30, 0.14, 0.42, 0.45))  // violet corner
+
+    // A gentle vignette so the panel's own shadow still reads.
+    ctx.saveGState()
+    if let v = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                          colors: [C(0, 0, 0, 0), C(0, 0, 0, 0.28)] as CFArray,
+                          locations: [0.55, 1]) {
+        ctx.drawRadialGradient(v, startCenter: CGPoint(x: CGFloat(W) / 2, y: CGFloat(H) / 2),
+                               startRadius: 0,
+                               endCenter: CGPoint(x: CGFloat(W) / 2, y: CGFloat(H) / 2),
+                               endRadius: CGFloat(W) * 0.62, options: [])
+    }
+    ctx.restoreGState()
+    _ = full
+}
+
 // MARK: - Frame
 
 func ramp(_ t: Double, _ a: Double, _ b: Double) -> Double {
@@ -150,11 +204,7 @@ func ramp(_ t: Double, _ a: Double, _ b: Double) -> Double {
 }
 
 func drawFrame(_ ctx: CGContext, t: Double) {
-    if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                          colors: [C(0.10, 0.10, 0.12), C(0.04, 0.04, 0.05)] as CFArray,
-                          locations: [0, 1]) {
-        ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: CGFloat(H)), end: CGPoint(x: 0, y: 0), options: [])
-    }
+    drawWallpaper(ctx)
 
     // Timeline (s): 0-1 idle | 1-1.4 expand | 1.4-4.6 two agents working
     //   | 4.6 Codex pulls cord | 5-7.4 permission card | 7.4-7.8 collapse
