@@ -83,7 +83,7 @@ struct SettingsView: View {
     // MARK: - Claude Code
 
     private var integrationGroup: some View {
-        SettingsGroup("Claude Code") {
+        SettingsGroup("Claude Code", agent: .claude) {
             VStack(alignment: .leading, spacing: 0) {
                 // Status row: a lamp, the state, and the primary action.
                 HStack(spacing: 10) {
@@ -187,7 +187,7 @@ struct SettingsView: View {
     @State private var confirmingCodexRemoval = false
 
     private var codexGroup: some View {
-        SettingsGroup("Codex") {
+        SettingsGroup("Codex", agent: .codex) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
                     Circle()
@@ -287,7 +287,7 @@ struct SettingsView: View {
     @State private var confirmingGeminiRemoval = false
 
     private var geminiGroup: some View {
-        SettingsGroup("Gemini CLI") {
+        SettingsGroup("Gemini CLI", agent: .gemini) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
                     Circle()
@@ -384,7 +384,7 @@ struct SettingsView: View {
     @State private var confirmingCursorRemoval = false
 
     private var cursorGroup: some View {
-        SettingsGroup("Cursor") {
+        SettingsGroup("Cursor", agent: .cursor) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
                     Circle()
@@ -672,28 +672,39 @@ struct SettingsView: View {
 /// optional footnote — the macOS System Settings idiom.
 private struct SettingsGroup<Content: View>: View {
     let title: String
+    let agent: AgentSource?
     let footer: String?
     @ViewBuilder let content: Content
 
-    init(_ title: String, @ViewBuilder content: () -> Content, footer: () -> String) {
+    init(_ title: String, agent: AgentSource? = nil,
+         @ViewBuilder content: () -> Content, footer: () -> String) {
         self.title = title
+        self.agent = agent
         self.content = content()
         self.footer = footer()
     }
 
-    init(_ title: String, @ViewBuilder content: () -> Content) {
+    init(_ title: String, agent: AgentSource? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.agent = agent
         self.content = content()
         self.footer = nil
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(AndonTheme.label(10))
-                .tracking(1.1)
-                .foregroundStyle(AndonTheme.textTertiary)
-                .padding(.leading, 2)
+            HStack(spacing: 5) {
+                if let glyph = agent?.glyph {
+                    GlyphShape(cgPath: glyph)
+                        .fill(AndonTheme.textTertiary)
+                        .frame(width: 10, height: 10)
+                }
+                Text(title.uppercased())
+                    .font(AndonTheme.label(10))
+                    .tracking(1.1)
+                    .foregroundStyle(AndonTheme.textTertiary)
+            }
+            .padding(.leading, 2)
 
             VStack(spacing: 0) { content }
                 .frame(maxWidth: .infinity, alignment: .leading)

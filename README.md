@@ -9,7 +9,7 @@ Approve tool calls, answer questions, and review plans — without leaving your 
 
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-black)
 ![Swift](https://img.shields.io/badge/swift-6.0-F05138)
-![Tests](https://img.shields.io/badge/tests-80%20passing-3FB950)
+![Tests](https://img.shields.io/badge/tests-88%20passing-3FB950)
 ![Privacy](https://img.shields.io/badge/telemetry-none-blue)
 
 <br>
@@ -31,12 +31,12 @@ line resumes.
 Integrated deeply rather than broadly — each agent added only as far as its
 hook contract honestly allows, and the UI never pretends otherwise:
 
-| Agent | Badge | Watch | Answer from the notch | Hooks live in |
+| | Agent | Watch | Answer from the notch | Hooks live in |
 |---|---|---|---|---|
-| **Claude Code** | `CC` | ✓ | ✓ permissions · questions · plan review | `~/.claude/settings.json` |
-| **Codex** | `CX` | ✓ | ✓ permissions | `~/.codex/hooks.json` |
-| **Gemini CLI** | `GM` | ✓ | alert + jump — Gemini hooks can announce an approval but not answer it | `~/.gemini/settings.json` |
-| **Cursor** | `CU` | ✓ | opt-in shell gate: Allow · Deny · Ask in Cursor | `~/.cursor/hooks.json` |
+| <img src="docs/icons/claude.svg" width="16" alt=""> | **Claude Code** | ✓ | ✓ permissions · questions · plan review | `~/.claude/settings.json` |
+| <img src="docs/icons/codex.svg" width="16" alt=""> | **Codex** | ✓ | ✓ permissions | `~/.codex/hooks.json` |
+| <img src="docs/icons/gemini.svg" width="16" alt=""> | **Gemini CLI** | ✓ | alert + jump — Gemini hooks can announce an approval but not answer it | `~/.gemini/settings.json` |
+| <img src="docs/icons/cursor.svg" width="16" alt=""> | **Cursor** | ✓ | opt-in shell gate: Allow · Deny · Ask in Cursor | `~/.cursor/hooks.json` |
 
 One shim, one socket, one board; a `--source` tag per hook command is all that
 tells the agents apart. Claude Code and Codex share the decision format, so
@@ -71,8 +71,9 @@ The board reads like an andon board — colour and motion first, text second:
 | 🟠 hard blink + `CORD` badge | cord pulled — a decision is waiting on you |
 | 🔴 steady dot | stopped — idle, finished, or failed |
 
-Each session also carries a tinted agent badge — `CC`, `CX`, or `GM` — so a
-mixed board never leaves you guessing which agent just pulled the cord.
+Each session also wears its agent's mark — Claude's starburst, the OpenAI
+knot, Gemini's spark, Cursor's cube — tinted per agent, so a mixed board never
+leaves you guessing who just pulled the cord.
 
 If it's green and moving, it's working. If it's red and still, it isn't.
 There is no state where a dead session can impersonate a live one: sessions
@@ -192,12 +193,12 @@ Sources/
     Notch/             # fixed-size panel, pill, board, request cards
     Terminal/          # precise jump (AppleScript / CLI / tmux)
 Tools/make-icon.swift      # the app icon, generated from the theme palette
-Tools/make-demo-gif.swift  # the README demo, rendered from the same palette + geometry
+Tools/make-demo-gif.sh     # the README demo, rendered from the same palette + geometry
 ```
 
 > The demo above is rendered offscreen from the app's own palette, geometry, and
 > equalizer math — not a live screen capture — so it shows exactly what the app
-> draws. Regenerate it with `swift Tools/make-demo-gif.swift docs/demo.gif`.
+> draws. Regenerate it with `Tools/make-demo-gif.sh docs/demo.gif`.
 
 `AndonKit` deliberately avoids AppKit so the shim stays light — it is spawned
 on every tool call (~10 ms). The icon is code, not an asset, so it can never
@@ -260,6 +261,8 @@ as text instead of guesswork.
 ## Credits
 
 Inspired by [Vibe Island](https://vibeisland.app), which supports 26 agents.
+Agent marks are drawn from [Simple Icons](https://simpleicons.org) path data
+(CC0); the logos remain trademarks of their respective owners.
 AndonCord is the opposite bet: a small, deliberately chosen set of agents —
 Claude Code, Codex, Gemini CLI, and Cursor — each integrated exactly as deeply
 as its hooks allow, rather than many wired up shallowly. Built with

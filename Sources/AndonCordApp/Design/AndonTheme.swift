@@ -205,28 +205,63 @@ struct DotLamp: View {
     }
 }
 
-/// Which agent a session belongs to — a tinted two-letter tag.
+/// Which agent a session belongs to — its mark, tinted, on a quiet chip.
 ///
 /// Small and quiet by default so a board of same-agent sessions is not noisy,
 /// but tinted distinctly enough that a mixed board (Claude + Codex at once)
-/// reads apart instantly.
+/// reads apart instantly. An agent the shim could not identify has no mark to
+/// wear, so `.unknown` falls back to the old two-character tag.
 struct AgentBadge: View {
     let agent: AgentSource
-    var size: CGFloat = 9
+    var size: CGFloat = 16
 
     var body: some View {
         let tint = AndonTheme.agentTint(agent)
-        Text(agent.badge)
-            .font(AndonTheme.numeric(size, weight: .bold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1.5)
-            .background {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(tint.opacity(0.16))
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                .fill(tint.opacity(0.16))
+            if let glyph = agent.glyph {
+                GlyphShape(cgPath: glyph)
+                    .fill(tint)
+                    .frame(width: size * 0.62, height: size * 0.62)
+            } else {
+                Text(agent.badge)
+                    .font(AndonTheme.numeric(size * 0.56, weight: .bold))
+                    .foregroundStyle(tint)
             }
-            .fixedSize()
-            .help(agent.displayName)
+        }
+        .frame(width: size, height: size)
+        .help(agent.displayName)
+    }
+}
+
+extension AgentSource {
+    /// The 24×24 `AgentGlyph` mark for this agent, nil when there isn't one.
+    var glyph: CGPath? {
+        switch self {
+        case .claude: return AgentGlyph.claude
+        case .codex: return AgentGlyph.openai
+        case .gemini: return AgentGlyph.gemini
+        case .cursor: return AgentGlyph.cursor
+        case .unknown: return nil
+        }
+    }
+}
+
+/// Fits a 24×24 `AgentGlyph` path into whatever rect SwiftUI offers. SVG and
+/// SwiftUI shapes are both y-down, so no flip is needed here (unlike the CG
+/// contexts in Tools/, which are y-up).
+///
+/// `@unchecked` because CGPath is not marked Sendable — but the glyphs are
+/// immutable `CGPath` constants, never `CGMutablePath`, so sharing is safe.
+struct GlyphShape: Shape, @unchecked Sendable {
+    let cgPath: CGPath
+
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width, rect.height) / AgentGlyph.viewBox
+        var transform = CGAffineTransform(translationX: rect.minX, y: rect.minY)
+            .scaledBy(x: scale, y: scale)
+        return Path(cgPath.copy(using: &transform) ?? cgPath)
     }
 }
 

@@ -7,9 +7,13 @@ import UniformTypeIdentifiers
 // Renders a faithful demo of the AndonCord notch panel, frame by frame, into an
 // animated GIF. Not a screen capture (the build environment has no
 // screen-recording permission) — every pixel is drawn from the same palette,
-// geometry, equalizer math, and agent tints the real app uses, so it mirrors
-// what the app renders. The story: two agents (Claude Code + Codex) running at
-// once on the board, then Codex pulls the cord for a permission.
+// geometry, equalizer math, agent tints, and glyphs the real app uses, so it
+// mirrors what the app renders. The story: four agents (Claude Code, Codex,
+// Gemini, Cursor) running at once under the live quota strip, then Cursor's
+// shell gate pulls the cord — Deny / Allow / Ask in Cursor.
+//
+// Built by Tools/make-demo-gif.sh, which compiles this file together with
+// Sources/AndonKit/Models/AgentGlyph.swift (the shared agent marks).
 
 // MARK: - Palette (mirrors AndonTheme)
 
@@ -96,15 +100,21 @@ func dot(_ ctx: CGContext, cx: CGFloat, cy: CGFloat, size: CGFloat, color: CGCol
                        cornerWidth: size * 0.3, cornerHeight: size * 0.3, transform: nil))
     ctx.fillPath(); ctx.restoreGState()
 }
-/// Two-letter agent badge, matching AgentBadge.
-func badge(_ ctx: CGContext, _ label: String, x: CGFloat, cy: CGFloat, tint: CGColor) -> CGFloat {
-    let fs: CGFloat = 10, pad: CGFloat = 4
-    let w = tw(label, size: fs, weight: .bold, mono: true) + pad * 2, h: CGFloat = 16
-    let r = CGRect(x: x, y: cy - h / 2, width: w, height: h)
+/// Agent glyph chip, matching AgentBadge. `cy` is in CG (y-up) space.
+func badge(_ ctx: CGContext, _ glyph: CGPath, x: CGFloat, cy: CGFloat, tint: CGColor) -> CGFloat {
+    let side: CGFloat = 16, glyphSide: CGFloat = 10
+    let chip = CGRect(x: x, y: cy - side / 2, width: side, height: side)
     ctx.setFillColor(tint.copy(alpha: 0.16)!)
-    ctx.addPath(roundedPath(r, 3)); ctx.fillPath()
-    text(ctx, label, x + pad, CGFloat(H) - cy - fs * 0.62, size: fs, color: tint, weight: .bold, mono: true)
-    return w
+    ctx.addPath(roundedPath(chip, 3.5)); ctx.fillPath()
+    ctx.saveGState()
+    // SVG glyphs are y-down; this context is y-up — flip while placing.
+    ctx.translateBy(x: x + (side - glyphSide) / 2, y: cy + glyphSide / 2)
+    ctx.scaleBy(x: glyphSide / AgentGlyph.viewBox, y: -glyphSide / AgentGlyph.viewBox)
+    ctx.addPath(glyph)
+    ctx.setFillColor(tint)
+    ctx.fillPath()
+    ctx.restoreGState()
+    return side
 }
 func pillButton(_ ctx: CGContext, _ label: String, x: CGFloat, top: CGFloat,
                 tint: CGColor, prominent: Bool, highlight: Bool = false) -> CGFloat {
@@ -124,7 +134,7 @@ func pillButton(_ ctx: CGContext, _ label: String, x: CGFloat, top: CGFloat,
 
 /// One session row on the board.
 func sessionRow(_ ctx: CGContext, x: CGFloat, top: CGFloat, width: CGFloat, t: Double,
-                agentLabel: String, agentTint: CGColor, title: String, terminal: String,
+                glyph: CGPath, agentTint: CGColor, title: String, terminal: String,
                 seconds: Int, cord: Bool, status: String) {
     let cy = CGFloat(H) - top - 23
     if cord {
@@ -133,7 +143,7 @@ func sessionRow(_ ctx: CGContext, x: CGFloat, top: CGFloat, width: CGFloat, t: D
     } else {
         equalizer(ctx, cx: x + 16, cy: cy, size: 12, t: t, color: green)
     }
-    let bw = badge(ctx, agentLabel, x: x + 30, cy: cy, tint: agentTint)
+    let bw = badge(ctx, glyph, x: x + 30, cy: cy, tint: agentTint)
     text(ctx, title, x + 30 + bw + 8, top + 9, size: 12, color: textPrimary, weight: .medium)
     let timeLabel = "\(seconds)s"
     let timeW = tw(timeLabel, size: 10, mono: true)
@@ -284,25 +294,25 @@ func drawFrame(_ ctx: CGContext, t: Double) {
 
     var y = pillH + 27 + 8
     sessionRow(ctx, x: x, top: y, width: w, t: t,
-               agentLabel: "CC", agentTint: claudeTint, title: "fix auth in middleware.ts",
+               glyph: AgentGlyph.claude, agentTint: claudeTint, title: "fix auth in middleware.ts",
                terminal: "iTerm2", seconds: 12 + Int(t), cord: false,
                status: Int(t) % 2 == 0 ? "Edit(middleware.ts)" : "Running…")
     y += 46
     ctx.setFillColor(hairline.copy(alpha: 0.5)!); ctx.fill(rTL(x + 30, y - 2, w - 44, 1))
     sessionRow(ctx, x: x, top: y, width: w, t: t + 0.7,
-               agentLabel: "CX", agentTint: codexTint, title: "add unit tests for parser",
+               glyph: AgentGlyph.openai, agentTint: codexTint, title: "add unit tests for parser",
                terminal: "Ghostty", seconds: 8 + Int(t), cord: false,
                status: Int(t) % 2 == 0 ? "apply_patch" : "Running…")
     y += 46
     ctx.setFillColor(hairline.copy(alpha: 0.5)!); ctx.fill(rTL(x + 30, y - 2, w - 44, 1))
     sessionRow(ctx, x: x, top: y, width: w, t: t + 1.4,
-               agentLabel: "GM", agentTint: geminiTint, title: "migrate configs to v2",
+               glyph: AgentGlyph.gemini, agentTint: geminiTint, title: "migrate configs to v2",
                terminal: "Terminal", seconds: 21 + Int(t), cord: false,
                status: Int(t) % 2 == 0 ? "run_shell_command" : "Running…")
     y += 46
     ctx.setFillColor(hairline.copy(alpha: 0.5)!); ctx.fill(rTL(x + 30, y - 2, w - 44, 1))
     sessionRow(ctx, x: x, top: y, width: w, t: t + 2.1,
-               agentLabel: "CU", agentTint: cursorTint, title: "refactor api client",
+               glyph: AgentGlyph.cursor, agentTint: cursorTint, title: "refactor api client",
                terminal: "Cursor", seconds: 33 + Int(t), cord: cordPulled,
                status: cordPulled ? "Waiting on you — Shell" : (Int(t) % 2 == 0 ? "Edit(client.ts)" : "Running…"))
     y += 48
@@ -320,7 +330,7 @@ func drawFrame(_ ctx: CGContext, t: Double) {
         var cy = cardTop + 11
         dot(ctx, cx: x + 20, cy: CGFloat(H) - cy - 8, size: 7, color: amber, glow: 0.9)
         text(ctx, "CORD PULLED · PERMISSION", x + 30, cy + 3, size: 10, color: amber, weight: .semibold, tracking: 0.8)
-        let bw = badge(ctx, "CU", x: x + w - 16 - 108, cy: CGFloat(H) - cy - 8, tint: cursorTint)
+        let bw = badge(ctx, AgentGlyph.cursor, x: x + w - 16 - 108, cy: CGFloat(H) - cy - 8, tint: cursorTint)
         text(ctx, "refactor api client", x + w - 16 - 108 + bw + 6, cy + 3, size: 10, color: textTertiary)
         cy += 25
         text(ctx, "Shell", x + 16, cy, size: 13, color: textPrimary, weight: .semibold)
