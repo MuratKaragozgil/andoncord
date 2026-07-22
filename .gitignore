@@ -1,0 +1,14 @@
+# Swift Package Manager
+.build/
+Package.resolved
+
+# Build output (app bundle + generated iconset are reproducible via build.sh)
+build/
+
+# macOS
+.DS_Store
+
+# Xcode (in case it gets opened there)
+*.xcodeproj
+xcuserdata/
+DerivedData/
