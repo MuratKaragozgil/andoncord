@@ -65,6 +65,11 @@ public enum Paths {
     public static var codexHooks: URL { codexDir.appendingPathComponent("hooks.json") }
     public static var codexConfig: URL { codexDir.appendingPathComponent("config.toml") }
 
+    public static var geminiDir: URL { home.appendingPathComponent(".gemini") }
+    /// Gemini hooks live in the main settings file, Claude-style: a `hooks`
+    /// key whose event arrays merge additively across config scopes.
+    public static var geminiSettings: URL { geminiDir.appendingPathComponent("settings.json") }
+
     /// Socket paths are capped at 104 bytes on Darwin (`sun_path`). A long
     /// username can push `~/.andoncord/run/andon.sock` past that, so callers
     /// need a way to find out before they try to bind.

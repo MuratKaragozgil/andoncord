@@ -151,7 +151,12 @@ public final class BoardStore {
                     toolName: tool, toolInput: payload.toolInput)
                 park(decision, as: request, on: &session)
                 emit(kind == .plan ? .planReview : .question)
-            } else {
+            } else if session.pending == nil {
+                // Guarded on the *parked request*, not on needsHuman: a
+                // Gemini session in the unanswerable attention state should
+                // flip back to working the moment tools start flowing again
+                // (the user approved in the terminal), while a session with a
+                // parked card keeps it until the card is answered.
                 session.state = .working(tool: tool)
             }
 
@@ -166,7 +171,7 @@ public final class BoardStore {
             if session.recentActivity.count > 12 {
                 session.recentActivity.removeFirst(session.recentActivity.count - 12)
             }
-            if !session.state.needsHuman { session.state = .running }
+            if session.pending == nil { session.state = .running }
 
         case .permissionRequest:
             guard envelope.blocking, let decision else {
@@ -184,7 +189,10 @@ public final class BoardStore {
             // wants attention but the reason is not something we can answer
             // from here — most often the idle prompt after a turn ends.
             switch payload.notificationType {
-            case "permission_prompt":
+            // "permission_prompt" is Claude's, "ToolPermission" is Gemini's.
+            // Gemini cannot be answered from a hook at all, so attention (jump
+            // to the terminal) is the honest ceiling there.
+            case "permission_prompt", "ToolPermission":
                 if session.pending == nil {
                     session.state = .cordPulled(.attention)
                     emit(.cordPulled)
@@ -196,9 +204,12 @@ public final class BoardStore {
             }
 
         case .stop:
-            if !session.state.needsHuman {
+            // Same principle: only a parked request outranks the turn ending.
+            // The attention state has nothing parked — the human answered in
+            // the terminal and the turn ran to completion, so it is done.
+            if session.pending == nil {
                 session.state = .done
-                session.lastAssistantMessage = payload.message
+                session.lastAssistantMessage = payload.message ?? payload.promptResponse
                 emit(.done)
             }
 

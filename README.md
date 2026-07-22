@@ -4,19 +4,19 @@
 
 # AndonCord
 
-**Claude Code & Codex sessions on your Mac's notch.**
+**Claude Code, Codex & Gemini CLI sessions on your Mac's notch.**
 Approve tool calls, answer questions, and review plans — without leaving your editor.
 
 ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-black)
 ![Swift](https://img.shields.io/badge/swift-6.0-F05138)
-![Tests](https://img.shields.io/badge/tests-58%20passing-3FB950)
+![Tests](https://img.shields.io/badge/tests-68%20passing-3FB950)
 ![Privacy](https://img.shields.io/badge/telemetry-none-blue)
 
 <br>
 
-<img src="docs/demo.gif" width="640" alt="AndonCord: Claude Code and Codex running together, then Codex pulls the cord for a permission">
+<img src="docs/demo.gif" width="640" alt="AndonCord: Claude Code, Codex and Gemini running together, then Codex pulls the cord for a permission">
 
-<sub>Claude Code (CC) and Codex (CX) running side by side on the board — then Codex pulls the cord and you approve, in the notch.</sub>
+<sub>Claude Code (CC), Codex (CX) and Gemini (GM) running side by side — then Codex pulls the cord and you approve, in the notch.</sub>
 
 </div>
 
@@ -28,12 +28,20 @@ status at a glance. That is exactly what this app is: Claude Code pulls the
 cord when it needs you, the board in your notch lights up, you answer, the
 line resumes.
 
-**Claude Code and Codex**, integrated deeply rather than broadly. Both expose
-almost the same hook contract — the same event names, the same stdin-JSON, the
-same decision format — so AndonCord speaks to each one natively: the permission
-card shows a real diff, questions get answered from the notch instead of just
-announced, and a mixed board tells the two apart at a glance (`CC` for Claude
-Code, `CX` for Codex). Deep beats broad — one shim, one socket, two agents.
+Integrated deeply rather than broadly — each agent added only as far as its
+hook contract honestly allows, and the UI never pretends otherwise:
+
+| Agent | Badge | Watch | Answer from the notch | Hooks live in |
+|---|---|---|---|---|
+| **Claude Code** | `CC` | ✓ | ✓ permissions · questions · plan review | `~/.claude/settings.json` |
+| **Codex** | `CX` | ✓ | ✓ permissions | `~/.codex/hooks.json` |
+| **Gemini CLI** | `GM` | ✓ | alert + jump — Gemini hooks can announce an approval but not answer it | `~/.gemini/settings.json` |
+
+One shim, one socket, one board; a `--source` tag per hook command is all that
+tells the agents apart. Claude Code and Codex share the decision format, so
+approvals round-trip from the notch. Gemini's `Notification` hook fires when a
+dialog appears but is fire-and-forget by design, so there the board alerts you
+and precise jump takes you to the terminal to decide.
 
 ## What it does
 
@@ -57,9 +65,8 @@ The board reads like an andon board — colour and motion first, text second:
 | 🟠 hard blink + `CORD` badge | cord pulled — a decision is waiting on you |
 | 🔴 steady dot | stopped — idle, finished, or failed |
 
-Each session also carries a tinted agent badge — `CC` (Claude Code) or `CX`
-(Codex) — so a board with both agents running never leaves you guessing which
-one just pulled the cord.
+Each session also carries a tinted agent badge — `CC`, `CX`, or `GM` — so a
+mixed board never leaves you guessing which agent just pulled the cord.
 
 If it's green and moving, it's working. If it's red and still, it isn't.
 There is no state where a dead session can impersonate a live one: sessions
@@ -75,8 +82,8 @@ cp -R "build/AndonCord.app" /Applications/
 open /Applications/AndonCord.app
 ```
 
-First launch walks you through Claude Code setup, and **Settings** has a Codex
-row you can enable separately. With your consent AndonCord will:
+First launch walks you through Claude Code setup; **Settings** has separate
+rows for Codex and Gemini CLI. With your consent AndonCord will:
 
 - **Claude Code** — add hook entries to `~/.claude/settings.json`, **alongside**
   anything already there, and point `statusLine` at a wrapper that **chains to
@@ -84,10 +91,13 @@ row you can enable separately. With your consent AndonCord will:
 - **Codex** — add hooks to `~/.codex/hooks.json`, a file that is separate from
   `config.toml` and additive by design, so your existing Codex config and
   `notify` command are left untouched
+- **Gemini CLI** — add named hooks to `~/.gemini/settings.json` using Gemini's
+  own event vocabulary (`BeforeTool`, `AfterAgent`, …); event arrays merge
+  additively across scopes, and the entries show up by name in `/hooks`
 - create `~/.andoncord/` for the local socket, the hook launcher, and a
   timestamped backup taken before every change
 
-Each integration is independent — run one, the other, or both. **Settings →
+Each integration is independent — enable any combination. **Settings →
 Remove** puts each file back exactly as it was; only entries carrying our marker
 are touched. Already-running sessions need a restart before hooks apply.
 
@@ -102,19 +112,19 @@ are touched. Already-running sessions need a restart before hooks apply.
 
 ```
 Claude Code ┐
-            ├─spawns─▶ andon-hook ──unix socket──▶ AndonCord.app
-Codex       ┘        (--source tags     one socket, (the board)
-   (hooks)            the agent)        both agents
+Codex       ├─spawns─▶ andon-hook ──unix socket──▶ AndonCord.app
+Gemini CLI  ┘        (--source tags     one socket,  (the board)
+   (hooks)            the agent)        every agent
       ▲                                                   │
       └──────────── decision JSON on stdout ◀─────────────┘
 ```
 
-Both agents run the **same shim** over the **same socket**; a `--source`
-argument written into each hook command is all that distinguishes them. Because
-Claude Code and Codex share the hook payload shape and the decision format, the
-board, the request cards, and the approval round trip are entirely
-agent-agnostic — adding Codex was a matter of *where* the hooks install, not
-*how* they are handled.
+Every agent runs the **same shim** over the **same socket**; a `--source`
+argument written into each hook command is all that distinguishes them. Gemini
+renamed the events (`BeforeTool`, `AfterAgent`, …) but kept Claude's structure,
+so a small normalisation table in `HookEventName` is the entire cost of
+understanding its dialect — the board, cards, and approval round trip stay
+agent-agnostic.
 
 **The shim is a real process, not an HTTP callback — deliberately.** Claude
 Code spawns it as a child of your shell, so it inherits the controlling TTY and
@@ -166,7 +176,7 @@ feedback loop is structurally impossible.
 Sources/
   AndonKit/            # models, socket, installer, store — no AppKit
     Server/            # HookServer, SocketTransport, PendingDecision
-    Integration/       # ClaudeSettingsInstaller, CodexHooksInstaller, JSONC
+    Integration/       # Claude/Codex/Gemini installers, LauncherWriter, JSONC
     Store/             # BoardStore — the state machine + session reaper
     Audio/             # ChiptuneEngine — synthesized 8-bit cues
   andon-hook/          # the shim: tiny, fail-open, terminal-aware
@@ -189,7 +199,7 @@ drift from the palette the board uses.
 
 ```bash
 swift build --product andon-hook   # RoundTripTests spawn the real shim
-swift test                         # 58 tests
+swift test                         # 68 tests
 ```
 
 The tests that matter most:
@@ -225,6 +235,9 @@ as text instead of guesswork.
 - **Codex hooks are version-gated** — the feature is recent and, on some
   builds, off by default. AndonCord installs the hooks and detects the flag,
   but cannot flip it for you.
+- **Gemini is watch-only** — its hooks cannot answer approvals (`Notification`
+  is fire-and-forget and `BeforeTool` runs post-approval), so the board
+  alerts and jumps instead of showing Allow/Deny. Requires Gemini CLI ≥ 0.26.
 - First precise jump prompts for **Automation** permission (iTerm2 /
   Terminal.app only). Denying it degrades to app activation.
 - No SSH-remote sessions, no auto-update, ad-hoc signing only.
@@ -233,6 +246,6 @@ as text instead of guesswork.
 
 Inspired by [Vibe Island](https://vibeisland.app), which supports 26 agents.
 AndonCord is the opposite bet: a small, deliberately chosen set of agents —
-Claude Code and Codex — integrated as deeply as their hooks allow, rather than
-many wired up shallowly. Built with
+Claude Code, Codex, and Gemini CLI — each integrated exactly as deeply as its
+hooks allow, rather than many wired up shallowly. Built with
 [Claude Code](https://claude.com/claude-code) — one of the tools it watches.

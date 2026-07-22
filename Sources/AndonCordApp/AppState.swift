@@ -19,6 +19,7 @@ final class AppState {
     let settings = AndonSettings()
     let installer = ClaudeSettingsInstaller()
     let codexInstaller = CodexHooksInstaller()
+    let geminiInstaller = GeminiHooksInstaller()
 
     @ObservationIgnored
     private let server = HookServer()
@@ -29,6 +30,7 @@ final class AppState {
     /// rather than presenting as "the app just doesn't work".
     private(set) var installStatus: ClaudeSettingsInstaller.Status = .notInstalled
     private(set) var codexStatus: CodexHooksInstaller.Status = .notInstalled
+    private(set) var geminiStatus: GeminiHooksInstaller.Status = .notInstalled
     private(set) var serverError: String?
     /// Set when another copy of the app already owns the socket.
     private(set) var duplicateInstancePID: pid_t?
@@ -105,6 +107,7 @@ final class AppState {
     func refreshInstallStatus() {
         installStatus = installer.currentStatus()
         codexStatus = codexInstaller.currentStatus()
+        geminiStatus = geminiInstaller.currentStatus()
     }
 
     var isIntegrationHealthy: Bool {
@@ -133,6 +136,34 @@ final class AppState {
     func removeCodex() -> Result<URL?, Error> {
         do {
             let backup = try codexInstaller.uninstall()
+            refreshInstallStatus()
+            return .success(backup)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    var isGeminiInstalled: Bool {
+        if case .installed = geminiStatus { return true }
+        return false
+    }
+
+    @discardableResult
+    func installGemini() -> Result<GeminiHooksInstaller.Report, Error> {
+        do {
+            let report = try geminiInstaller.install()
+            refreshInstallStatus()
+            return .success(report)
+        } catch {
+            AndonLog.ui.error("Gemini install failed: \(error.localizedDescription)")
+            return .failure(error)
+        }
+    }
+
+    @discardableResult
+    func removeGemini() -> Result<URL?, Error> {
+        do {
+            let backup = try geminiInstaller.uninstall()
             refreshInstallStatus()
             return .success(backup)
         } catch {

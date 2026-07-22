@@ -31,6 +31,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 22) {
             integrationGroup
             codexGroup
+            geminiGroup
             behaviourGroup
             soundGroup
             aboutGroup
@@ -277,6 +278,103 @@ struct SettingsView: View {
     private func removeCodex() {
         codexError = nil
         if case .failure(let error) = app.removeCodex() { codexError = error.localizedDescription }
+    }
+
+    // MARK: - Gemini
+
+    @State private var geminiError: String?
+    @State private var confirmingGeminiRemoval = false
+
+    private var geminiGroup: some View {
+        SettingsGroup("Gemini CLI") {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(geminiColor)
+                        .frame(width: 8, height: 8)
+                        .shadow(color: geminiColor.opacity(0.7), radius: 3)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(geminiTitle)
+                            .font(AndonTheme.body(13, weight: .medium))
+                            .foregroundStyle(AndonTheme.textPrimary)
+                        if let sub = geminiSubtitle {
+                            Text(sub)
+                                .font(AndonTheme.body(11))
+                                .foregroundStyle(AndonTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if app.isGeminiInstalled {
+                        Button("Remove") { confirmingGeminiRemoval = true }
+                            .buttonStyle(AndonButtonStyle(tint: AndonTheme.red))
+                    } else {
+                        Button("Set up") { installGemini() }
+                            .buttonStyle(AndonButtonStyle(
+                                tint: AndonTheme.agentTint(.gemini), prominent: true))
+                    }
+                }
+                .padding(14)
+
+                if let geminiError {
+                    RowDivider()
+                    Text(geminiError)
+                        .font(AndonTheme.body(11))
+                        .foregroundStyle(AndonTheme.red)
+                        .padding(14)
+                }
+            }
+        } footer: {
+            "Watch-only: Gemini's hooks can announce an approval but not answer it, "
+                + "so the board alerts you and jump takes you to the terminal to decide."
+        }
+        .alert("Remove AndonCord's Gemini hooks?", isPresented: $confirmingGeminiRemoval) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) { removeGemini() }
+        } message: {
+            Text("Gemini CLI will stop reporting to the board. Any other hooks in "
+                 + "~/.gemini/settings.json are left in place.")
+        }
+    }
+
+    private var geminiColor: Color {
+        switch app.geminiStatus {
+        case .installed: return AndonTheme.green
+        case .notInstalled: return AndonTheme.inactive
+        case .drifted: return AndonTheme.amber
+        case .fileUnreadable: return AndonTheme.red
+        }
+    }
+
+    private var geminiTitle: String {
+        switch app.geminiStatus {
+        case .installed: return "Connected"
+        case .notInstalled: return "Not set up"
+        case .drifted: return "Needs repair"
+        case .fileUnreadable: return "Can't read settings.json"
+        }
+    }
+
+    private var geminiSubtitle: String? {
+        switch app.geminiStatus {
+        case .installed: return "Gemini CLI is reporting to the board."
+        case .notInstalled: return "Watch Gemini sessions alongside the others."
+        case .drifted(let reason): return reason
+        case .fileUnreadable(let reason): return reason
+        }
+    }
+
+    private func installGemini() {
+        geminiError = nil
+        if case .failure(let error) = app.installGemini() { geminiError = error.localizedDescription }
+    }
+
+    private func removeGemini() {
+        geminiError = nil
+        if case .failure(let error) = app.removeGemini() { geminiError = error.localizedDescription }
     }
 
     // MARK: - Behaviour

@@ -26,6 +26,25 @@ public enum HookEventName: String, Codable, Sendable {
     public var isBlockingByDefault: Bool {
         self == .permissionRequest
     }
+
+    /// Resolve an event name from any supported agent.
+    ///
+    /// Gemini CLI adopted Claude's hook *structure* but renamed the events
+    /// (its own `hooks migrate --from-claude` command documents the exact
+    /// mapping). Normalising here means the store never needs to know which
+    /// agent a payload came from to understand what happened.
+    public static func normalized(from raw: String?) -> HookEventName? {
+        guard let raw else { return nil }
+        if let direct = HookEventName(rawValue: raw) { return direct }
+        switch raw {
+        case "BeforeTool": return .preToolUse
+        case "AfterTool": return .postToolUse
+        case "BeforeAgent": return .userPromptSubmit
+        case "AfterAgent": return .stop
+        case "PreCompress": return .preCompact
+        default: return nil
+        }
+    }
 }
 
 /// Tools whose `PreToolUse` we intercept synchronously because the notch can
@@ -73,6 +92,8 @@ public struct HookPayload: Codable, Sendable {
     // UserPromptSubmit
     public var userMessage: String?
     public var prompt: String?
+    /// Gemini's AfterAgent carries the turn's reply here.
+    public var promptResponse: String?
 
     /// Empty payload, used when a stdin blob decodes as JSON but not as
     /// anything we model. The raw object still travels in the envelope.
@@ -98,10 +119,11 @@ public struct HookPayload: Codable, Sendable {
         case sessionTitle = "session_title"
         case userMessage = "user_message"
         case prompt
+        case promptResponse = "prompt_response"
     }
 
     public var event: HookEventName? {
-        hookEventName.flatMap(HookEventName.init(rawValue:))
+        HookEventName.normalized(from: hookEventName)
     }
 
     /// `model` arrives as either a bare string or `{id, display_name}`

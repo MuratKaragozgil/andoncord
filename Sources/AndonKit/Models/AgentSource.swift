@@ -11,6 +11,7 @@ import Foundation
 public enum AgentSource: String, Codable, Sendable, CaseIterable {
     case claude
     case codex
+    case gemini
     /// A session whose source the shim did not tag. Decodes here rather than
     /// failing, so an older shim or an unknown agent still shows up.
     case unknown
@@ -20,6 +21,7 @@ public enum AgentSource: String, Codable, Sendable, CaseIterable {
         switch argument?.lowercased() {
         case "claude", "claude-code": self = .claude
         case "codex": self = .codex
+        case "gemini", "gemini-cli": self = .gemini
         default: self = .unknown
         }
     }
@@ -28,6 +30,7 @@ public enum AgentSource: String, Codable, Sendable, CaseIterable {
         switch self {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
+        case .gemini: return "Gemini CLI"
         case .unknown: return "Agent"
         }
     }
@@ -37,6 +40,7 @@ public enum AgentSource: String, Codable, Sendable, CaseIterable {
         switch self {
         case .claude: return "CC"
         case .codex: return "CX"
+        case .gemini: return "GM"
         case .unknown: return "··"
         }
     }
