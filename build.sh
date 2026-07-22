@@ -1,13 +1,21 @@
 #!/bin/bash
-# Builds AndonCord.app.
+# Builds AndonCord.app.  Usage: build.sh [debug|release|dmg]
 #
 # SPM cannot emit an app bundle, so the executable is assembled into one by
 # hand. The hook shim ships inside the same bundle as the app: the launcher in
 # ~/.andoncord/bin resolves it there, which is what lets the app be moved or
 # updated without rewriting anyone's settings.json.
+#
+# "dmg" does a release build and then packages build/AndonCord.dmg — the app
+# plus an /Applications symlink, the classic drag-to-install disk image.
 set -euo pipefail
 
 CONFIG="${1:-debug}"
+MAKE_DMG=""
+if [ "$CONFIG" = "dmg" ]; then
+  CONFIG=release
+  MAKE_DMG=1
+fi
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="AndonCord"
 BUNDLE_ID="app.andoncord.mac"
@@ -16,7 +24,12 @@ VERSION="0.1.0"
 cd "$ROOT"
 
 echo "▸ Building ($CONFIG)…"
-if [ "$CONFIG" = "release" ]; then
+if [ -n "$MAKE_DMG" ]; then
+  # The distributed image is universal — Intel Macs run macOS 14 too.
+  swift build -c release --arch arm64 --arch x86_64 --product AndonCordApp
+  swift build -c release --arch arm64 --arch x86_64 --product andon-hook
+  BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+elif [ "$CONFIG" = "release" ]; then
   swift build -c release --product AndonCordApp
   swift build -c release --product andon-hook
   BIN="$(swift build -c release --show-bin-path)"
@@ -69,12 +82,27 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature. Enough for local use; a real release needs a Developer ID
-# signature plus notarisation, or Gatekeeper will refuse to open it.
+# Ad-hoc signature. Enough for local use; without a Developer ID signature
+# plus notarisation, downloaded copies need the Gatekeeper steps in the README.
 echo "▸ Signing (ad-hoc)…"
 codesign --force --deep --sign - "$APP" 2>/dev/null
 
 echo "▸ Built $APP"
+
+if [ -n "$MAKE_DMG" ]; then
+  echo "▸ Packaging DMG…"
+  STAGING="$ROOT/build/dmg-staging"
+  DMG="$ROOT/build/$APP_NAME.dmg"
+  rm -rf "$STAGING" "$DMG"
+  mkdir -p "$STAGING"
+  cp -R "$APP" "$STAGING/$APP_NAME.app"
+  ln -s /Applications "$STAGING/Applications"
+  hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGING" \
+    -format UDZO -fs HFS+ -ov -quiet "$DMG"
+  rm -rf "$STAGING"
+  echo "▸ Packaged $DMG"
+fi
+
 echo
 echo "  Run:      open '$APP'"
 echo "  Console:  log stream --predicate 'subsystem == \"app.andoncord\"' --level debug"

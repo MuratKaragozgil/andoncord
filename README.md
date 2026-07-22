@@ -11,6 +11,9 @@ Approve tool calls, answer questions, and review plans — without leaving your 
 ![Swift](https://img.shields.io/badge/swift-6.0-F05138)
 ![Tests](https://img.shields.io/badge/tests-88%20passing-3FB950)
 ![Privacy](https://img.shields.io/badge/telemetry-none-blue)
+[![Release](https://img.shields.io/github/v/release/MuratKaragozgil/andoncord?color=E8A33D&label=release)](https://github.com/MuratKaragozgil/andoncord/releases/latest)
+
+**[⬇ Download AndonCord.dmg](https://github.com/MuratKaragozgil/andoncord/releases/latest/download/AndonCord.dmg)** — universal (Apple Silicon + Intel), macOS 14+
 
 <br>
 
@@ -81,6 +84,23 @@ whose process disappears are reaped by a real pid liveness check, not a timer.
 
 ## Install
 
+**[⬇ Download AndonCord.dmg](https://github.com/MuratKaragozgil/andoncord/releases/latest/download/AndonCord.dmg)**,
+open it, drag AndonCord into Applications, launch.
+
+> **First launch:** the app is ad-hoc signed — there is no Apple Developer
+> account behind it, so it is not notarised and Gatekeeper has nothing to
+> verify. macOS will refuse the first double-click. Go to **System Settings →
+> Privacy & Security**, scroll down, and click **Open Anyway**. If macOS
+> instead claims the app "is damaged", clear the quarantine flag and open it
+> again:
+>
+> ```bash
+> xattr -cr /Applications/AndonCord.app
+> ```
+>
+> Or skip all of that by building from source — same result, your own
+> signature:
+
 ```bash
 git clone https://github.com/MuratKaragozgil/andoncord.git
 cd andoncord
@@ -113,9 +133,6 @@ are touched. Already-running sessions need a restart before hooks apply.
 > **Codex note:** hooks are a recent, sometimes-gated Codex feature. If Codex
 > sessions don't appear, enable it with `[features] hooks = true` in
 > `~/.codex/config.toml` — the Settings row detects this and tells you.
-
-> Builds are ad-hoc signed. On a machine other than the one that built it,
-> Gatekeeper will complain — right-click → Open, or build it yourself.
 
 ## How it works
 
@@ -208,7 +225,8 @@ drift from the palette the board uses.
 
 ```bash
 swift build --product andon-hook   # RoundTripTests spawn the real shim
-swift test                         # 80 tests
+swift test                         # 88 tests
+./build.sh dmg                     # the release artifact: a universal drag-to-install image
 ```
 
 The tests that matter most:
