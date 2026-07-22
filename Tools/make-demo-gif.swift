@@ -144,6 +144,37 @@ func sessionRow(_ ctx: CGContext, x: CGFloat, top: CGFloat, width: CGFloat, t: D
     text(ctx, status, x + 30 + bw + 8, top + 25, size: 10.5, color: cord ? amber : textSecondary)
 }
 
+/// The quota strip under the header — 5-hour and weekly windows, real feature.
+func usageStrip(_ ctx: CGContext, x: CGFloat, top: CGFloat, width: CGFloat) {
+    ctx.setFillColor(surface)
+    ctx.fill(rTL(x, top, width, 26))
+    ctx.setFillColor(hairline); ctx.fill(rTL(x, top, width, 1))
+    let cy = CGFloat(H) - top - 13
+    var cx = x + 16
+    func window(_ label: String, _ fraction: Double, _ pct: String, _ reset: String) {
+        text(ctx, label, cx, top + 8, size: 9, color: textTertiary, weight: .semibold, tracking: 0.5)
+        cx += tw(label, size: 9, weight: .semibold) + 7
+        let segs = 8, segW: CGFloat = 5, gap: CGFloat = 1.5, hgt: CGFloat = 7
+        let lit = Int((Double(segs) * fraction).rounded(.up))
+        for i in 0..<segs {
+            ctx.setFillColor(i < lit ? green : inactive.copy(alpha: 0.5)!)
+            ctx.addPath(CGPath(roundedRect: CGRect(x: cx, y: cy - hgt/2, width: segW, height: hgt),
+                               cornerWidth: 1, cornerHeight: 1, transform: nil))
+            ctx.fillPath(); cx += segW + gap
+        }
+        cx += 5
+        text(ctx, pct, cx, top + 7, size: 10, color: green, weight: .semibold, mono: true)
+        cx += tw(pct, size: 10, weight: .semibold, mono: true) + 6
+        text(ctx, reset, cx, top + 8, size: 9, color: textTertiary, mono: true)
+        cx += tw(reset, size: 9, mono: true) + 16
+    }
+    window("5H", 0.41, "41%", "3h12m")
+    window("7D", 0.12, "12%", "4d2h")
+    let cost = "$4.83"
+    text(ctx, cost, x + width - 16 - tw(cost, size: 10, mono: true), top + 7,
+         size: 10, color: textTertiary, mono: true)
+}
+
 // MARK: - Wallpaper
 
 /// An original macOS-style desktop, drawn from scratch.
@@ -218,7 +249,7 @@ func drawFrame(_ ctx: CGContext, t: Double) {
     let w = collapsedW + (expandedW - collapsedW) * boardExpand
     let pillH: CGFloat = 40
     let cardExtra: CGFloat = showCard ? 176 : 0
-    let boardH = pillH + (242 + cardExtra - pillH) * boardExpand
+    let boardH = pillH + (268 + cardExtra - pillH) * boardExpand
     let x = (CGFloat(W) - w) / 2
     let radius = 12 + 10 * boardExpand
     let panel = rTL(x, 0, w, boardH)
@@ -249,8 +280,9 @@ func drawFrame(_ ctx: CGContext, t: Double) {
     guard boardExpand > 0.25 else { return }
     ctx.saveGState(); ctx.setAlpha(ramp(t, 1.3, 1.7))
     ctx.setFillColor(hairline); ctx.fill(rTL(x, pillH, w, 1))
+    usageStrip(ctx, x: x, top: pillH + 1, width: w)
 
-    var y = pillH + 8
+    var y = pillH + 27 + 8
     sessionRow(ctx, x: x, top: y, width: w, t: t,
                agentLabel: "CC", agentTint: claudeTint, title: "fix auth in middleware.ts",
                terminal: "iTerm2", seconds: 12 + Int(t), cord: false,
@@ -259,8 +291,8 @@ func drawFrame(_ ctx: CGContext, t: Double) {
     ctx.setFillColor(hairline.copy(alpha: 0.5)!); ctx.fill(rTL(x + 30, y - 2, w - 44, 1))
     sessionRow(ctx, x: x, top: y, width: w, t: t + 0.7,
                agentLabel: "CX", agentTint: codexTint, title: "add unit tests for parser",
-               terminal: "Ghostty", seconds: 8 + Int(t), cord: cordPulled,
-               status: cordPulled ? "Waiting on you — Bash" : (Int(t) % 2 == 0 ? "apply_patch" : "Running…"))
+               terminal: "Ghostty", seconds: 8 + Int(t), cord: false,
+               status: Int(t) % 2 == 0 ? "apply_patch" : "Running…")
     y += 46
     ctx.setFillColor(hairline.copy(alpha: 0.5)!); ctx.fill(rTL(x + 30, y - 2, w - 44, 1))
     sessionRow(ctx, x: x, top: y, width: w, t: t + 1.4,
@@ -271,8 +303,8 @@ func drawFrame(_ ctx: CGContext, t: Double) {
     ctx.setFillColor(hairline.copy(alpha: 0.5)!); ctx.fill(rTL(x + 30, y - 2, w - 44, 1))
     sessionRow(ctx, x: x, top: y, width: w, t: t + 2.1,
                agentLabel: "CU", agentTint: cursorTint, title: "refactor api client",
-               terminal: "Cursor", seconds: 33 + Int(t), cord: false,
-               status: Int(t) % 2 == 0 ? "Edit(client.ts)" : "Running…")
+               terminal: "Cursor", seconds: 33 + Int(t), cord: cordPulled,
+               status: cordPulled ? "Waiting on you — Shell" : (Int(t) % 2 == 0 ? "Edit(client.ts)" : "Running…"))
     y += 48
     ctx.restoreGState()
 
@@ -288,20 +320,22 @@ func drawFrame(_ ctx: CGContext, t: Double) {
         var cy = cardTop + 11
         dot(ctx, cx: x + 20, cy: CGFloat(H) - cy - 8, size: 7, color: amber, glow: 0.9)
         text(ctx, "CORD PULLED · PERMISSION", x + 30, cy + 3, size: 10, color: amber, weight: .semibold, tracking: 0.8)
-        let bw = badge(ctx, "CX", x: x + w - 16 - 96, cy: CGFloat(H) - cy - 8, tint: codexTint)
-        text(ctx, "add unit tests", x + w - 16 - 96 + bw + 6, cy + 3, size: 10, color: textTertiary)
+        let bw = badge(ctx, "CU", x: x + w - 16 - 108, cy: CGFloat(H) - cy - 8, tint: cursorTint)
+        text(ctx, "refactor api client", x + w - 16 - 108 + bw + 6, cy + 3, size: 10, color: textTertiary)
         cy += 25
-        text(ctx, "Bash", x + 16, cy, size: 13, color: textPrimary, weight: .semibold)
-        text(ctx, "npm test -- --coverage", x + 16 + tw("Bash ", size: 13, weight: .semibold), cy + 1,
+        text(ctx, "Shell", x + 16, cy, size: 13, color: textPrimary, weight: .semibold)
+        text(ctx, "npm run deploy", x + 16 + tw("Shell ", size: 13, weight: .semibold), cy + 1,
              size: 11, color: textSecondary, mono: true)
         cy += 23
         let box = rTL(x + 16, cy, w - 32, 30)
         ctx.setFillColor(surface); ctx.addPath(roundedPath(box, 6)); ctx.fillPath()
-        text(ctx, "npm test -- --coverage", x + 24, cy + 8, size: 11, color: textPrimary, mono: true)
+        text(ctx, "npm run deploy", x + 24, cy + 8, size: 11, color: textPrimary, mono: true)
         cy += 44
         let dw = pillButton(ctx, "Deny", x: x + 16, top: cy, tint: red, prominent: false)
-        _ = pillButton(ctx, "Allow", x: x + 16 + dw + 8, top: cy, tint: green, prominent: true,
-                       highlight: t >= 6.9 && t < 7.3)
+        let aw = pillButton(ctx, "Allow", x: x + 16 + dw + 8, top: cy, tint: green, prominent: true,
+                            highlight: t >= 6.9 && t < 7.3)
+        _ = pillButton(ctx, "Ask in Cursor", x: x + 16 + dw + 8 + aw + 8, top: cy,
+                       tint: cursorTint, prominent: false)
         text(ctx, "⌘Y / ⌘N", x + w - 16 - tw("⌘Y / ⌘N", size: 9, mono: true), cy + 8, size: 9, color: textTertiary, mono: true)
         ctx.restoreGState()
     }

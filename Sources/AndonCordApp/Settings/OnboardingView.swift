@@ -55,7 +55,7 @@ struct OnboardingView: View {
                 Text("AndonCord")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(AndonTheme.textPrimary)
-                Text("Claude Code, on your notch")
+                Text("Your coding agents, on the notch")
                     .font(AndonTheme.body(11))
                     .foregroundStyle(AndonTheme.textSecondary)
             }

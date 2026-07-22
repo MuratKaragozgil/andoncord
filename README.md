@@ -14,9 +14,9 @@ Approve tool calls, answer questions, and review plans — without leaving your 
 
 <br>
 
-<img src="docs/demo.gif" width="640" alt="AndonCord: Claude Code, Codex and Gemini running together, then Codex pulls the cord for a permission">
+<img src="docs/demo.gif" width="640" alt="AndonCord: four agents on one board with live quota, then Cursor's shell gate asks for a decision">
 
-<sub>Claude Code (CC), Codex (CX), Gemini (GM) and Cursor (CU) running side by side — then Codex pulls the cord and you approve, in the notch.</sub>
+<sub>Four agents on one board with live quota — then Cursor's shell gate pulls the cord: Deny, Allow, or hand it back with "Ask in Cursor".</sub>
 
 </div>
 
@@ -57,6 +57,7 @@ hand-back-to-native escape hatch.
 | 🎯 **Jump** | Click a session to land in its exact terminal tab, split, or tmux pane. |
 | 📊 **Budget** | 5-hour and weekly rate-limit windows, read from Claude Code itself — the same numbers `/usage` shows, not token-count guesswork. |
 | 🔊 **Hear** | Synthesized 8-bit cues, one per event, distinct enough to learn by ear. Replace any of them by dropping a `.wav` into `~/.andoncord/sounds`. |
+| 📺 **Place** | The board lives on the display you choose — the notched built-in screen or any external monitor (Settings → Display). |
 
 Everything is local. No account, no server, no telemetry, no network calls.
 
