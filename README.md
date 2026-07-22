@@ -85,21 +85,10 @@ whose process disappears are reaped by a real pid liveness check, not a timer.
 ## Install
 
 **[⬇ Download AndonCord.dmg](https://github.com/MuratKaragozgil/andoncord/releases/latest/download/AndonCord.dmg)**,
-open it, drag AndonCord into Applications, launch.
+open it, drag AndonCord into Applications, launch. Releases are Developer ID
+signed and notarised by Apple, so it opens with a plain double-click.
 
-> **First launch:** the app is ad-hoc signed — there is no Apple Developer
-> account behind it, so it is not notarised and Gatekeeper has nothing to
-> verify. macOS will refuse the first double-click. Go to **System Settings →
-> Privacy & Security**, scroll down, and click **Open Anyway**. If macOS
-> instead claims the app "is damaged", clear the quarantine flag and open it
-> again:
->
-> ```bash
-> xattr -cr /Applications/AndonCord.app
-> ```
->
-> Or skip all of that by building from source — same result, your own
-> signature:
+Or build from source:
 
 ```bash
 git clone https://github.com/MuratKaragozgil/andoncord.git
@@ -274,7 +263,7 @@ as text instead of guesswork.
   one correctly-badged session.
 - First precise jump prompts for **Automation** permission (iTerm2 /
   Terminal.app only). Denying it degrades to app activation.
-- No SSH-remote sessions, no auto-update, ad-hoc signing only.
+- No SSH-remote sessions, no auto-update.
 
 ## Credits
 
