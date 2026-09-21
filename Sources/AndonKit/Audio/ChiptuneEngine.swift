@@ -2,8 +2,8 @@ import AVFoundation
 import Foundation
 import os
 
-/// The board's voice: a tiny NES-flavoured synthesiser that turns `BoardSound`
-/// events into short square/pulse/triangle motifs.
+/// The board's voice: a tiny synthesiser that turns `BoardSound` events into
+/// short sine and triangle motifs.
 ///
 /// Nothing here ships as an audio file. Every cue is generated from a note
 /// list at play time, which keeps the bundle free of binary blobs and makes the
@@ -13,11 +13,13 @@ import os
 ///
 /// ## Design constraints
 ///
-/// These sounds fire dozens of times an hour, all day. That pushed three rules:
-/// every cue is under ~350ms, amplitudes are graded so the cues you must not
+/// These sounds fire dozens of times an hour, all day. That pushed four rules:
+/// every cue is under ~500ms, amplitudes are graded so the cues you must not
 /// miss (`cordPulled`) sit well above the ones that are merely informational
-/// (`sessionStart`), and repeats inside a short window are dropped rather than
-/// stacked — a burst of six hook events must not turn into a chord.
+/// (`sessionStart`), repeats inside a short window are dropped rather than
+/// stacked — a burst of six hook events must not turn into a chord — and
+/// nothing is made of a pulse wave. A cue heard this often has to be one you
+/// can stop noticing, and harmonics are what stop that from happening.
 public final class ChiptuneEngine {
 
     // MARK: - Tuning constants
@@ -546,6 +548,11 @@ public final class ChiptuneEngine {
         /// the others without simply being louder.
         case pulse(duty: Double)
         case triangle
+        /// No harmonics at all, so nothing to alias and nothing to grate. The
+        /// quiet end of the palette: what a cue is made of here decides how it
+        /// sits in a room far more than how loud it is, and most of these fire
+        /// dozens of times an hour next to someone's head.
+        case sine
 
         static let square = Waveform.pulse(duty: 0.5)
 
@@ -567,6 +574,8 @@ public final class ChiptuneEngine {
                 return value
             case .triangle:
                 return 2.0 * abs(2.0 * phase - 1.0) - 1.0
+            case .sine:
+                return sin(2.0 * .pi * phase)
             }
         }
 
@@ -594,12 +603,18 @@ public final class ChiptuneEngine {
         var sustain: Float = 0.55
         var release: Double = 0.025
 
-        /// Fast, hard, and held — for cues that must be noticed.
-        static let punchy = Envelope(attack: 0.002, decay: 0.030, sustain: 0.90, release: 0.015)
-        /// Slow in, quick to fade — for cues that must not startle.
-        static let gentle = Envelope(attack: 0.008, decay: 0.060, sustain: 0.45, release: 0.030)
-        /// Holds its level so a low buzz reads as a buzz rather than a pluck.
-        static let sustained = Envelope(attack: 0.008, decay: 0.050, sustain: 0.80, release: 0.040)
+        /// Present and held, but not struck. Still the most assertive envelope
+        /// here — `cordPulled` has to be noticed — with an onset slow enough
+        /// not to read as a click.
+        static let punchy = Envelope(attack: 0.010, decay: 0.050, sustain: 0.85, release: 0.070)
+        /// Slow in, long out — for cues that must not startle.
+        static let gentle = Envelope(attack: 0.018, decay: 0.080, sustain: 0.50, release: 0.110)
+        /// Holds its level, for a low tone that should read as a tone rather
+        /// than a pluck.
+        static let sustained = Envelope(attack: 0.016, decay: 0.070, sustain: 0.80, release: 0.090)
+        /// A struck-and-ringing shape: brief rise, then most of the note is the
+        /// tail. What makes a chime sound like a chime instead of a beep.
+        static let bell = Envelope(attack: 0.006, decay: 0.110, sustain: 0.30, release: 0.150)
     }
 
     private struct Note {
@@ -652,82 +667,103 @@ public final class ChiptuneEngine {
     /// instrument rather than eight unrelated beeps; `denied` borrows an F♯ to
     /// land slightly outside that set, which is what makes it read as a "no"
     /// without needing to be loud or harsh.
+    ///
+    /// ## Timbre
+    ///
+    /// The melodic design below is unchanged — the intervals, the contours and
+    /// the amplitude hierarchy are what carry the meaning, and they were right.
+    /// What changed is what the notes are made of. These were pulse and square
+    /// waves, which is period-correct and also the harshest thing a small
+    /// speaker can be asked to reproduce; a 25% pulse at 1.3kHz is most of the
+    /// way to an alarm clock, and these fire dozens of times an hour beside
+    /// someone's head all day.
+    ///
+    /// So: sine for everything that is merely informing you, triangle where a
+    /// cue needs some edge to be found in a noisy room, and no pulse at all.
+    /// Notes are longer and the envelopes ring out rather than stopping, which
+    /// is the other half of it — a cue that ends abruptly sounds hard however
+    /// smooth its waveform.
+    ///
+    /// `cordPulled` keeps triangle and keeps its amplitude: it is the one cue
+    /// that must interrupt, and it earns that through interval, repetition and
+    /// register rather than through harmonics.
     private static func score(for sound: BoardSound) -> [Note] {
         switch sound {
         case .cordPulled:
             // The alarm. A rising fifth stated twice — the interval and the
             // repetition are both things ears treat as "this is addressed to
-            // you". Thin 25% pulse so it cuts through music and a fan rather
-            // than competing on volume alone.
+            // you". Triangle rather than a thin pulse: still enough upper
+            // harmonics to be found across a room, without the buzz.
             return [
-                Note(.pulse(duty: 0.25), Pitch.a5, 0.070, 0.90, envelope: .punchy),
-                Note(.pulse(duty: 0.25), Pitch.e6, 0.070, 0.90, envelope: .punchy),
-                .rest(0.030),
-                Note(.pulse(duty: 0.25), Pitch.a5, 0.070, 0.90, envelope: .punchy),
-                Note(.pulse(duty: 0.25), Pitch.e6, 0.110, 0.90, envelope: .punchy),
+                Note(.triangle, Pitch.a5, 0.090, 0.85, envelope: .punchy),
+                Note(.triangle, Pitch.e6, 0.090, 0.85, envelope: .punchy),
+                .rest(0.045),
+                Note(.triangle, Pitch.a5, 0.090, 0.85, envelope: .punchy),
+                Note(.triangle, Pitch.e6, 0.190, 0.85, envelope: .punchy),
             ]
 
         case .question:
             // Rising fourth, and the second note itself slides up a tone: the
             // same terminal rise that turns a spoken sentence into a question.
-            // Plain square and two-thirds the amplitude keeps it clearly below
-            // cordPulled.
+            // Sine, and half the alert's amplitude, keeps it clearly below it.
             return [
-                Note(.square, Pitch.e5, 0.090, 0.45),
-                Note(.square, Pitch.a5, 0.150, 0.45, slideTo: Pitch.b5),
+                Note(.sine, Pitch.e5, 0.110, 0.44, envelope: .gentle),
+                Note(.sine, Pitch.a5, 0.210, 0.44, slideTo: Pitch.b5, envelope: .gentle),
             ]
 
         case .planReview:
             // Three notes, the last one leaping a fifth and held: a phrase that
             // opens rather than resolves, which is the point — something is
-            // waiting, but nothing is on fire. Triangle keeps it soft.
+            // waiting, but nothing is on fire.
             return [
-                Note(.triangle, Pitch.e5, 0.080, 0.42),
-                Note(.triangle, Pitch.g5, 0.080, 0.42),
-                Note(.triangle, Pitch.d6, 0.150, 0.42),
+                Note(.sine, Pitch.e5, 0.100, 0.40, envelope: .gentle),
+                Note(.sine, Pitch.g5, 0.100, 0.40, envelope: .gentle),
+                Note(.sine, Pitch.d6, 0.230, 0.40, envelope: .bell),
             ]
 
         case .cleared:
             // Fourth up onto the tonic: the shortest gesture that sounds
-            // finished.
+            // finished. Struck and left to ring.
             return [
-                Note(.square, Pitch.g5, 0.060, 0.50),
-                Note(.square, Pitch.c6, 0.110, 0.50),
+                Note(.sine, Pitch.g5, 0.080, 0.46, envelope: .bell),
+                Note(.sine, Pitch.c6, 0.240, 0.46, envelope: .bell),
             ]
 
         case .denied:
-            // Falling minor third, triangle, soft attack. Negative by contour
-            // instead of by timbre, so it never feels like a scolding.
+            // Falling minor third, soft attack. Negative by contour instead of
+            // by timbre, so it never feels like a scolding.
             return [
-                Note(.triangle, Pitch.a4, 0.070, 0.40, envelope: .gentle),
-                Note(.triangle, Pitch.f4Sharp, 0.140, 0.40, envelope: .gentle),
+                Note(.sine, Pitch.a4, 0.100, 0.40, envelope: .gentle),
+                Note(.sine, Pitch.f4Sharp, 0.230, 0.40, envelope: .gentle),
             ]
 
         case .done:
             // Major triad up to the octave. Pleasant, unremarkable, forgettable
             // — which is what you want from the cue that fires most often after
-            // sessionStart.
+            // sessionStart. The last note rings; the three leading up to it do
+            // not, or the arpeggio turns to mush.
             return [
-                Note(.triangle, Pitch.c5, 0.055, 0.38),
-                Note(.triangle, Pitch.e5, 0.055, 0.38),
-                Note(.triangle, Pitch.g5, 0.055, 0.38),
-                Note(.triangle, Pitch.c6, 0.090, 0.38),
+                Note(.sine, Pitch.c5, 0.065, 0.36, envelope: .gentle),
+                Note(.sine, Pitch.e5, 0.065, 0.36, envelope: .gentle),
+                Note(.sine, Pitch.g5, 0.065, 0.36, envelope: .gentle),
+                Note(.sine, Pitch.c6, 0.200, 0.36, envelope: .bell),
             ]
 
         case .failed:
             // Two octaves below the alert, sliding down and losing pitch: the
             // "power cut" sound. Unmistakably bad news, but low frequencies do
-            // not trigger the startle response that a high alarm does.
+            // not trigger the startle response that a high alarm does. Triangle
+            // keeps the descent audible on a speaker with no bass to speak of.
             return [
-                Note(.square, 220.00, 0.180, 0.45, slideTo: 130.81, envelope: .sustained),
-                Note(.square, 110.00, 0.130, 0.35, envelope: .sustained),
+                Note(.triangle, 220.00, 0.220, 0.42, slideTo: 130.81, envelope: .sustained),
+                Note(.triangle, 110.00, 0.190, 0.32, envelope: .sustained),
             ]
 
         case .sessionStart:
-            // One short triangle tick at a seventh of the alert's amplitude.
+            // One short sine tick at a seventh of the alert's amplitude.
             // Sessions appear constantly; this should register as texture, not
             // as an event.
-            return [Note(.triangle, Pitch.c6, 0.045, 0.13, envelope: .gentle)]
+            return [Note(.sine, Pitch.c6, 0.070, 0.13, envelope: .gentle)]
         }
     }
 
@@ -758,6 +794,18 @@ public final class ChiptuneEngine {
         return cursor
     }
 
+    /// Raised cosine over `0...1`, for the attack and release ramps.
+    ///
+    /// A linear ramp reaches its destination with a corner in it — the
+    /// amplitude is continuous but its slope is not, and that discontinuity is
+    /// audible at the top of a fast attack as a faint tick. Easing both ends
+    /// removes the corner, which is most of the difference between a cue that
+    /// sounds struck and one that sounds switched on.
+    private static func smoothRamp(_ t: Float) -> Float {
+        let clamped = min(max(t, 0), 1)
+        return 0.5 - 0.5 * cos(clamped * .pi)
+    }
+
     private static func renderNote(
         _ note: Note,
         frames: Int,
@@ -778,14 +826,14 @@ public final class ChiptuneEngine {
 
             var level: Float
             if index < attackFrames {
-                level = Float(index) / Float(attackFrames)
+                level = smoothRamp(Float(index) / Float(attackFrames))
             } else {
                 let decayProgress = Float(index - attackFrames) / Float(decayFrames)
                 level = envelope.sustain + (1 - envelope.sustain) * max(0, 1 - decayProgress)
             }
             let remaining = frames - index
             if remaining < releaseFrames {
-                level *= Float(remaining) / Float(releaseFrames)
+                level *= smoothRamp(Float(remaining) / Float(releaseFrames))
             }
 
             destination[index] =
