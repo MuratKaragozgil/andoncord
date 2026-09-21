@@ -174,17 +174,30 @@ struct AndonLamp: View {
 /// fixed states. That continuous change is the whole point: it reads as live
 /// activity, and it stops dead the instant the session stops working because
 /// the lamp switches to `DotLamp`.
+///
+/// ## Why this draws into a `Canvas` instead of stacking three `Capsule`s
+///
+/// The obvious version — an `HStack` of capsules whose `frame(height:)` comes
+/// out of the sine — measured at **27% of a core**, for one 8-point lamp. A
+/// view whose *size* changes every frame invalidates layout every frame, and
+/// SwiftUI does not relayout that lamp in isolation: it relayouts the whole
+/// hosting view. `NotchRootView` deliberately keeps the entire expanded panel
+/// laid out at all times so its height is known before an expansion starts, so
+/// "the whole hosting view" is the full board — every session row, measured
+/// again, 120 times a second, to move three 8-point bars.
+///
+/// Drawing instead of stacking keeps the geometry constant: the `Canvas` is a
+/// single fixed-size leaf, so a new frame is a redraw and never a relayout.
+/// Same picture, and the same lamp then measures at ~0%.
 struct WorkingIndicator: View {
     let color: Color
     var size: CGFloat = 8
 
-    /// Every frame costs three sines, three shape rebuilds and a shadow blur,
-    /// once per active session. That is the price of the effect and worth it
-    /// while someone can see it; behind a transparent container it is pure
-    /// waste, so the schedule pauses rather than the view being torn down.
-    /// Heights come from absolute time, so resuming lands wherever the wave is
-    /// by then — a discontinuity nobody can see, since it happens while the
-    /// bars are invisible.
+    /// Even a redraw is worth skipping when nobody can see it: the panel is
+    /// laid out while collapsed, so its lamps would otherwise animate behind a
+    /// fully transparent container. Heights come from absolute time, so
+    /// resuming lands wherever the wave is by then — a discontinuity that
+    /// happens while the bars are invisible.
     @Environment(\.andonIsVisible) private var isVisible
 
     private let barCount = 3
@@ -198,19 +211,28 @@ struct WorkingIndicator: View {
 
         TimelineView(.animation(paused: !isVisible)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .center, spacing: spacing) {
-                ForEach(0..<barCount, id: \.self) { index in
+            Canvas { context, canvasSize in
+                let span = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * spacing
+                var x = (canvasSize.width - span) / 2
+                for index in 0..<barCount {
                     let wave = 0.5 + 0.5 * sin(t * 7 + phases[index])
                     let height = size * (0.32 + 0.68 * wave)
-                    Capsule(style: .continuous)
-                        .fill(color)
-                        .frame(width: barWidth, height: height)
+                    let bar = CGRect(
+                        x: x, y: (canvasSize.height - height) / 2,
+                        width: barWidth, height: height)
+                    context.fill(
+                        Path(roundedRect: bar, cornerRadius: barWidth / 2, style: .continuous),
+                        with: .color(color))
+                    x += barWidth + spacing
                 }
             }
-            .frame(width: size, height: size, alignment: .center)
-            .shadow(color: color.opacity(0.5), radius: 2)
         }
         .frame(width: size, height: size)
+        // Outside the canvas, not a `Canvas` filter: a filter is clipped to the
+        // canvas rect, and at full extension a bar fills it — the glow would be
+        // cut off exactly when it should be brightest. Out here it bleeds past
+        // the frame the way it always did, and it is still only a render pass.
+        .shadow(color: color.opacity(0.5), radius: 2)
     }
 }
 
