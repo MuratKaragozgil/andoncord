@@ -38,11 +38,25 @@ public struct RateLimitWindow: Codable, Sendable, Equatable {
 
     public var fraction: Double { min(max(usedPercentage / 100, 0), 1) }
 
-    /// Compact reset countdown, e.g. `4h11m` / `2d 3h`.
+    /// Whether this window's reset time has already passed.
+    ///
+    /// Matters more than it looks. Claude Code only reports quota while a
+    /// session is rendering a statusline, so the last reading can easily
+    /// outlive the window it described — and a percentage from a window that
+    /// has since reset is not a small error, it is a number about nothing.
+    /// Everything downstream refuses to draw a bar for an expired window
+    /// rather than showing a stale one as if it were live.
+    public func isExpired(asOf now: Date = Date()) -> Bool {
+        guard let resetsAt else { return false }
+        return resetsAt <= now
+    }
+
+    /// Compact reset countdown, e.g. `4h11m` / `2d 3h`. Nil once the window
+    /// has rolled over, because there is nothing left to count down to.
     public var resetCountdown: String? {
         guard let resetsAt else { return nil }
         let remaining = resetsAt.timeIntervalSinceNow
-        guard remaining > 0 else { return "now" }
+        guard remaining > 0 else { return nil }
         let totalMinutes = Int(remaining / 60)
         let days = totalMinutes / 1440
         let hours = (totalMinutes % 1440) / 60
@@ -82,16 +96,26 @@ public struct RateLimits: Codable, Sendable, Equatable {
 
     public var isEmpty: Bool { fiveHour == nil && sevenDay == nil }
 
-    /// The window closest to its cap — the one that will actually stop you.
-    public var binding: (label: String, window: RateLimitWindow)? {
-        switch (fiveHour, sevenDay) {
-        case let (.some(five), .some(seven)):
-            return five.usedPercentage >= seven.usedPercentage
-                ? ("5h", five) : ("7d", seven)
-        case let (.some(five), nil): return ("5h", five)
-        case let (nil, .some(seven)): return ("7d", seven)
-        case (nil, nil): return nil
+    public func window(_ kind: QuotaWindowKind) -> RateLimitWindow? {
+        switch kind {
+        case .fiveHour: return fiveHour
+        case .sevenDay: return sevenDay
         }
+    }
+
+    /// Windows that are still describing something real.
+    public func live(asOf now: Date = Date()) -> [(kind: QuotaWindowKind, window: RateLimitWindow)] {
+        QuotaWindowKind.allCases.compactMap { kind in
+            guard let window = window(kind), !window.isExpired(asOf: now) else { return nil }
+            return (kind, window)
+        }
+    }
+
+    /// The window closest to its cap — the one that will actually stop you.
+    /// Expired windows are skipped: a rolled-over 5-hour reading stuck at 90%
+    /// would otherwise permanently outrank a live weekly one.
+    public func binding(asOf now: Date = Date()) -> (kind: QuotaWindowKind, window: RateLimitWindow)? {
+        live(asOf: now).max { $0.window.usedPercentage < $1.window.usedPercentage }
     }
 }
 
@@ -106,6 +130,29 @@ public struct StatusSnapshot: Codable, Sendable, Equatable {
     public var cost: Cost?
     public var modelDisplayName: String?
     public var capturedAt: Date
+
+    /// How long ago Claude Code produced this reading.
+    public var age: TimeInterval { max(0, Date().timeIntervalSince(capturedAt)) }
+
+    /// Beyond this, the reading is old enough that presenting it as the
+    /// current state would be a lie.
+    ///
+    /// The statusline is the only surface that carries `rate_limits`, and it
+    /// only fires while a Claude Code session is actually rendering one — so
+    /// the cache goes quiet the moment you stop working, and stays quiet for
+    /// however long that lasts. The number is still worth showing; pretending
+    /// it is live is not.
+    public var isStale: Bool { age > 15 * 60 }
+
+    /// `4m` / `2h` / `6d`, for the "as of" label next to a stale reading.
+    public var ageDescription: String {
+        let minutes = Int(age / 60)
+        if minutes < 1 { return "just now" }
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h ago" }
+        return "\(hours / 24)d ago"
+    }
 
     public struct ContextWindow: Codable, Sendable, Equatable {
         public var usedPercentage: Double?
@@ -157,6 +204,11 @@ public struct StatusSnapshot: Codable, Sendable, Equatable {
         try c.encodeIfPresent(rateLimits, forKey: .rateLimits)
         try c.encodeIfPresent(contextWindow, forKey: .contextWindow)
         try c.encodeIfPresent(cost, forKey: .cost)
+        // Round-trips as the same shape Claude Code sends, so a cached
+        // snapshot decodes identically to a live one.
+        if let modelDisplayName {
+            try c.encode(JSONValue.object(["display_name": .string(modelDisplayName)]), forKey: .model)
+        }
         try c.encode(capturedAt, forKey: .capturedAt)
     }
 

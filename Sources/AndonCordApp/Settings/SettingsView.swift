@@ -509,8 +509,10 @@ struct SettingsView: View {
                 RowDivider()
                 ToggleRow(
                     "Show usage limits",
-                    detail: "Reads the 5-hour and weekly windows from Claude Code's statusline.",
+                    detail: "The 5-hour and weekly windows, read from the Claude desktop app's own record — or Claude Code's statusline — and carried forward by measured spend between readings.",
                     isOn: bind(\.showUsage))
+                RowDivider()
+                usageRow
                 RowDivider()
                 ToggleRow(
                     "Launch at login",
@@ -518,6 +520,39 @@ struct SettingsView: View {
                     isOn: bind(\.launchAtLogin))
             }
         }
+    }
+
+    /// The token breakdown, and an honest note about where its numbers come
+    /// from — this is the one feature that reads files Claude Code wrote for
+    /// its own purposes, so it says so rather than appearing to know things.
+    private var usageRow: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Token usage")
+                    .font(AndonTheme.body(13))
+                    .foregroundStyle(AndonTheme.textPrimary)
+                Text(usageDetail)
+                    .font(AndonTheme.body(11))
+                    .foregroundStyle(AndonTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            Button("Open") { app.openUsageWindow?() }
+                .buttonStyle(AndonButtonStyle())
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var usageDetail: String {
+        if app.ledger.isIndexing { return "Indexing ~/.claude/projects…" }
+        let sessions = app.ledger.sessions.count
+        guard sessions > 0 else {
+            return "Read locally from ~/.claude/projects. Nothing leaves this Mac."
+        }
+        let week = app.ledger.total(since: Date().addingTimeInterval(-7 * 24 * 3600))
+        return "\(sessions) sessions indexed from ~/.claude/projects · "
+            + "\(formatTokens(week.total)) this week. Nothing leaves this Mac."
     }
 
     /// Which display the board lives on.

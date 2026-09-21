@@ -13,6 +13,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let controller: NotchController
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
+    private var usageWindow: NSWindow?
     private var onboardingWindow: NSWindow?
 
     init(app: AppState, controller: NotchController) {
@@ -23,6 +24,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func install() {
         app.openSettingsWindow = { [weak self] in self?.showSettings() }
+        app.openUsageWindow = { [weak self] in self?.showUsage() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.makeIcon()
@@ -78,11 +80,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(withTitle: summary, action: nil, keyEquivalent: "")
         menu.items.last?.isEnabled = false
 
-        if let limits = board.rateLimits, let binding = limits.binding {
-            let item = NSMenuItem(
-                title: "\(binding.label) · \(Int(binding.window.usedPercentage))% used"
-                    + (binding.window.resetCountdown.map { ", resets in \($0)" } ?? ""),
-                action: nil, keyEquivalent: "")
+        if let quota = quotaMenuTitle() {
+            let item = NSMenuItem(title: quota, action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
         }
@@ -92,6 +91,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             withTitle: "Show Board", action: #selector(showBoard), keyEquivalent: "")
         boardItem.target = self
         boardItem.isEnabled = true
+
+        let usageItem = menu.addItem(
+            withTitle: "Token Usage…", action: #selector(showUsage), keyEquivalent: "u")
+        usageItem.target = self
+        usageItem.isEnabled = true
 
         // Surface a broken integration here rather than only in the panel,
         // which the user may never open if it never appears.
@@ -128,6 +132,28 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         quitItem.isEnabled = true
     }
 
+    /// The one quota line worth a menu row: the window that will stop you
+    /// first, how much of it is left, and whether it is going to last.
+    ///
+    /// Nothing is shown for a window whose reset has passed — that reading
+    /// describes a window which no longer exists, and a menu that reports it
+    /// as current is how a stale cache becomes a wrong answer.
+    private func quotaMenuTitle() -> String? {
+        guard let binding = app.bindingQuota() else {
+            return app.board.status == nil ? nil : "No current quota reading"
+        }
+        let used = Int((binding.usedPercentage ?? 0).rounded())
+        var title = "\(binding.kind.shortLabel) · \(binding.isEstimate ? "~" : "")\(used)% used"
+        if let countdown = binding.resetCountdown { title += ", resets in \(countdown)" }
+        if binding.forecast.verdict != .holds, binding.forecast.verdict != .unknown,
+           let summary = binding.forecast.summary(windowLabel: binding.kind.longLabel) {
+            title += " — \(summary)"
+        } else if binding.isEstimate {
+            title += " (estimated)"
+        }
+        return title
+    }
+
     @objc private func showBoard() {
         controller.toggleExpanded()
     }
@@ -140,10 +166,39 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// The token breakdown. A real window rather than a panel section: it is
+    /// a page you read and scroll, and the notch panel is neither.
+    @objc func showUsage() {
+        if let usageWindow {
+            Self.present(usageWindow)
+            return
+        }
+        let window = Self.makePanelWindow(
+            title: "Token Usage",
+            content: UsageWindowView(app: app),
+            size: NSSize(width: 760, height: 700))
+        window.isReleasedWhenClosed = false
+        usageWindow = window
+        Self.present(window)
+    }
+
+    /// Bring a window forward and keep it there.
+    ///
+    /// `makeKeyAndOrderFront` alone is not enough for an accessory app.
+    /// Activation is cooperative on recent macOS — a request from an app that
+    /// is not already frontmost can simply be declined, which is exactly what
+    /// happens when a window is opened at launch rather than by a click. The
+    /// window is then created and ordered in, but never displayed.
+    /// `orderFrontRegardless` is the one call that does not ask permission.
+    private static func present(_ window: NSWindow) {
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
     @objc private func showSettings() {
         if let settingsWindow {
-            settingsWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            Self.present(settingsWindow)
             return
         }
         let window = Self.makePanelWindow(
@@ -155,14 +210,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             size: NSSize(width: 480, height: 640))
         window.isReleasedWhenClosed = false
         settingsWindow = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        Self.present(window)
     }
 
     func showOnboarding() {
         if let onboardingWindow {
-            onboardingWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            Self.present(onboardingWindow)
             return
         }
         let window = Self.makePanelWindow(
@@ -175,8 +228,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         window.isReleasedWhenClosed = false
         onboardingWindow = window
         window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        Self.present(window)
     }
 
     private static func makePanelWindow(

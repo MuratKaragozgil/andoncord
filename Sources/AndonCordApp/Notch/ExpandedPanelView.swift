@@ -30,8 +30,15 @@ struct ExpandedPanelView: View {
                         removal: .opacity))
             }
 
-            if app.settings.showUsage, let limits = board.rateLimits, !limits.isEmpty {
-                UsageStripView(limits: limits, status: board.status)
+            // Shown whenever the readout is enabled, not only when a quota
+            // reading exists: "no reading yet, here is why" is information,
+            // and a strip that silently disappears is the reason the numbers
+            // were confusing in the first place.
+            if app.settings.showUsage {
+                UsageStripView(app: app) {
+                    controller.collapse()
+                    app.openUsageWindow?()
+                }
             }
 
             if !board.sessions.isEmpty {
@@ -69,9 +76,20 @@ struct ExpandedPanelView: View {
                     .foregroundStyle(AndonTheme.textTertiary)
             }
 
+            // Same reasoning as Settings: the panel collapses first so the
+            // window is not left underneath the status-bar-level notch panel.
             Button {
-                // The panel collapses first so the settings window is not left
-                // underneath the status-bar-level notch panel.
+                controller.collapse()
+                app.openUsageWindow?()
+            } label: {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AndonTheme.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Token usage — where the tokens went, by project, session, prompt and file")
+
+            Button {
                 controller.collapse()
                 app.openSettingsWindow?()
             } label: {

@@ -221,14 +221,54 @@ struct CollapsedPillView: View {
                     .monospacedDigit()
             }
 
-            if app.settings.showUsage,
-               let binding = app.board.rateLimits?.binding {
-                AndonMeter(
-                    fraction: binding.window.fraction,
-                    segments: 5,
-                    color: meterColor(binding.window.severity),
-                    segmentWidth: 4, height: 6)
+            // Whichever window is closest to stopping you, on the one surface
+            // that is always visible. An expired reading is not frozen on
+            // screen, and a figure this app estimated is dimmed so it cannot
+            // pass for one Claude Code stated.
+            //
+            // The number is spelled out next to the bar rather than left to
+            // the bar alone: five segments can separate "fine" from "nearly
+            // out", but not 40% from 55% — and that is the range where you
+            // actually decide whether to start the next thing.
+            if app.settings.showUsage, let binding = app.bindingQuota(now: now) {
+                HStack(spacing: 5) {
+                    Text(binding.kind.shortLabel)
+                        .font(AndonTheme.label(8.5))
+                        .tracking(0.5)
+                        .foregroundStyle(AndonTheme.textTertiary)
+                    AndonMeter(
+                        fraction: binding.fraction,
+                        segments: 5,
+                        color: pillMeterColor(binding),
+                        segmentWidth: 4, height: 6)
+                    Text("\(binding.isEstimate ? "~" : "")\(Int((binding.usedPercentage ?? 0).rounded()))%")
+                        .font(AndonTheme.numeric(10, weight: .semibold))
+                        .foregroundStyle(pillMeterColor(binding))
+                        .monospacedDigit()
+                }
+                .opacity(binding.isMeasured ? 1 : 0.6)
+                .help(pillQuotaHelp(binding))
             }
+        }
+    }
+
+    private func pillQuotaHelp(_ binding: QuotaReadout) -> String {
+        var parts = ["\(binding.kind.longLabel) window · \(binding.provenance)"]
+        if let countdown = binding.resetCountdown { parts.append("resets in \(countdown)") }
+        if let summary = binding.forecast.summary(windowLabel: binding.kind.longLabel) {
+            parts.append(summary)
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The projection outranks the bar. A window at 25% that is on pace to
+    /// blow past the cap should not read as green on the one strip that is
+    /// always on screen.
+    private func pillMeterColor(_ binding: QuotaReadout) -> Color {
+        switch binding.forecast.verdict {
+        case .exhausts: return AndonTheme.red
+        case .tight: return AndonTheme.amber
+        case .holds, .unknown: return meterColor(binding.severity)
         }
     }
 

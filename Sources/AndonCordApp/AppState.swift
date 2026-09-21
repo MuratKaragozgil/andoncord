@@ -16,6 +16,12 @@ enum AndonLog {
 @MainActor
 final class AppState {
     let board = BoardStore()
+    /// Token accounting, read from Claude Code's own transcripts.
+    let ledger = UsageLedger()
+    /// Quota, read from the Claude desktop app's own five-minute record. The
+    /// statusline cache in `BoardStore` is the fallback for machines without
+    /// the desktop app.
+    let planUsage = PlanUsageStore()
     let settings = AndonSettings()
     let installer = ClaudeSettingsInstaller()
     let codexInstaller = CodexHooksInstaller()
@@ -44,9 +50,134 @@ final class AppState {
     /// on a black field.
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
+    /// Same arrangement for the usage breakdown window.
+    @ObservationIgnored
+    var openUsageWindow: (() -> Void)?
+
+    /// The learned scale between measured spend and Claude Code's quota
+    /// percentages. Persisted, because a reading may be days apart from the
+    /// moment it is needed.
+    private(set) var calibration = QuotaCalibration.load()
 
     init() {
         board.onSound = { [weak self] sound in self?.playSound(sound) }
+        board.onQuotaSample = { [weak self] snapshot in self?.calibrate(against: snapshot) }
+        // The reading that lands at launch is paired against whatever the
+        // index held at that instant, which on a first run is nothing. Every
+        // completed pass is a chance to do that pairing properly.
+        ledger.onIndexed = { [weak self] in
+            guard let self, let status = self.board.status else { return }
+            self.calibrate(against: status)
+        }
+    }
+
+    // MARK: - Quota
+
+    /// Memo for `quotaReadout`.
+    ///
+    /// The collapsed pill draws its quota meter, and the pill's body is
+    /// re-evaluated every frame while a session is working — the lamp is a
+    /// real animation, not a two-state pulse. Summing a year of ledger buckets
+    /// sixty times a second to redraw five segments is not a trade worth
+    /// making, and none of the inputs move at anything like that rate.
+    @ObservationIgnored
+    private var readoutCache: [QuotaWindowKind: (key: ReadoutKey, value: QuotaReadout)] = [:]
+
+    /// Everything a readout depends on that can actually change, plus a
+    /// coarse clock so countdowns still tick.
+    private struct ReadoutKey: Equatable {
+        var indexedAt: Date?
+        var planReadAt: Date?
+        var capturedAt: Date?
+        var tick: Int
+    }
+
+    /// The best available figure for one window, and an honest label for where
+    /// it came from.
+    ///
+    /// Three sources, in descending order of how much they can be trusted:
+    /// the desktop app's five-minute record, the statusline cache, and — only
+    /// when both have gone quiet — spend measured from the transcripts scaled
+    /// against whatever real reading was seen last.
+    func quotaReadout(_ kind: QuotaWindowKind, now: Date = Date()) -> QuotaReadout {
+        let key = ReadoutKey(
+            indexedAt: ledger.indexedAt,
+            planReadAt: planUsage.readAt,
+            capturedAt: board.status?.capturedAt,
+            tick: Int(now.timeIntervalSinceReferenceDate / 15))
+        if let cached = readoutCache[kind], cached.key == key { return cached.value }
+        let readout = computeQuotaReadout(kind, now: now)
+        readoutCache[kind] = (key, readout)
+        return readout
+    }
+
+    private func computeQuotaReadout(_ kind: QuotaWindowKind, now: Date) -> QuotaReadout {
+        let spent = ledger.total(since: windowStart(kind, now: now))
+        if let plan = planUsage.readout(kind, spent: spent, now: now) { return plan }
+
+        let status = board.status
+        return QuotaReadout.compose(
+            kind: kind,
+            inputs: .init(
+                limits: board.rateLimits,
+                capturedAt: status?.capturedAt,
+                isStale: status?.isStale ?? true,
+                spentInWindow: spent,
+                spentSinceReading: status.map { ledger.total(since: $0.capturedAt) } ?? TokenUsage(),
+                calibration: calibration,
+                samples: quotaSamples(for: kind)),
+            now: now)
+    }
+
+    /// When the window currently in force opened, for scoping spend to it.
+    func windowStart(_ kind: QuotaWindowKind, now: Date = Date()) -> Date {
+        planUsage.windowStart(kind, now: now)
+            ?? kind.windowStart(limits: board.rateLimits, now: now)
+    }
+
+    /// Readings to measure pace from. The desktop app's series is denser and
+    /// far longer than anything the statusline produces, so it wins when it
+    /// has anything to offer.
+    func quotaSamples(for kind: QuotaWindowKind) -> [QuotaSample] {
+        let plan = planUsage.samples.filter { $0.value(for: kind) != nil }
+        return plan.isEmpty ? board.quotaHistory.samples(for: kind) : plan
+    }
+
+    /// Whichever window will stop you first.
+    func bindingQuota(now: Date = Date()) -> QuotaReadout? {
+        QuotaWindowKind.allCases
+            .map { quotaReadout($0, now: now) }
+            .filter { $0.usedPercentage != nil }
+            .max { ($0.usedPercentage ?? 0) < ($1.usedPercentage ?? 0) }
+    }
+
+    /// Learn the cap from a reading and the spend that produced it.
+    ///
+    /// Age is not disqualifying, and that matters: someone who works mostly
+    /// through the desktop app may have exactly one statusline reading on
+    /// disk, weeks old. It is still a perfectly good calibration — the window
+    /// it described is reconstructible from its own reset time, and the
+    /// transcripts still hold every request that went into it.
+    ///
+    /// What *is* disqualifying is measuring past the reading: the percentage
+    /// knows nothing about requests made after it was taken, so the interval
+    /// is clipped at `capturedAt`.
+    private func calibrate(against snapshot: StatusSnapshot) {
+        guard let limits = snapshot.rateLimits else { return }
+        var updated = calibration
+        for kind in QuotaWindowKind.allCases {
+            guard let window = limits.window(kind) else { continue }
+            let end = min(window.resetsAt ?? snapshot.capturedAt, snapshot.capturedAt)
+            let start = (window.resetsAt ?? snapshot.capturedAt)
+                .addingTimeInterval(-kind.length)
+            guard start < end else { continue }
+            updated.observe(
+                kind: kind, usedPercentage: window.usedPercentage,
+                spent: ledger.total(in: start..<end), at: snapshot.capturedAt)
+        }
+        guard updated != calibration else { return }
+        calibration = updated
+        updated.save()
     }
 
     // MARK: - Lifecycle
@@ -65,7 +196,12 @@ final class AppState {
         }
 
         server.onEvent = { [weak self] envelope, decision in
-            self?.board.apply(envelope, decision: decision)
+            guard let self else { return }
+            self.board.apply(envelope, decision: decision)
+            // A finished turn means the transcript just gained the response
+            // that turn cost. Re-reading it now keeps the readout in step with
+            // the board instead of trailing the poll interval.
+            if envelope.payload.event == .stop { self.ledger.refresh() }
         }
 
         do {
@@ -76,6 +212,13 @@ final class AppState {
             AndonLog.ui.error("Server failed to start: \(self.serverError ?? "")")
         }
 
+        // Started before the quota watcher so the cached index is in memory
+        // by the time the first reading arrives and asks what it cost.
+        // Indexing a year of transcripts takes a while the first time and is
+        // near-free after that, so it runs at launch rather than making
+        // someone wait when they open the window.
+        ledger.start()
+        planUsage.start()
         board.startWatchingRateLimits()
         // Sessions whose process died without a SessionEnd would otherwise sit
         // on the board reading "running" indefinitely.
@@ -91,6 +234,8 @@ final class AppState {
     }
 
     func stop() {
+        planUsage.stop()
+        ledger.stop()
         board.stopReaping()
         server.stop()
         chiptune.shutdown()

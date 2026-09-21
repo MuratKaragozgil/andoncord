@@ -54,8 +54,25 @@ public enum Paths {
     /// Records what `statusLine.command` was before we took it over, so
     /// uninstall can put it back exactly.
     public static var statuslineChain: URL { root.appendingPathComponent("statusline-chain.json") }
+    /// Indexed transcript totals. Pure derived data — deleting it costs one
+    /// re-scan and nothing else.
+    public static var usageIndex: URL { root.appendingPathComponent("usage-index.json") }
+    /// Append-only log of quota readings. Two readings are all it takes to
+    /// know whether the current pace fits in the window that is left, and
+    /// Claude Code exposes only the instantaneous percentage.
+    public static var usageHistory: URL { root.appendingPathComponent("usage-history.jsonl") }
+    /// The learned scale between measured spend and Claude Code's percentages.
+    public static var quotaCalibration: URL { root.appendingPathComponent("quota-calibration.json") }
 
     public static var claudeDir: URL { home.appendingPathComponent(".claude") }
+
+    /// The Claude desktop app's own quota record, sampled every five minutes.
+    /// Read-only, and the best quota source on the machine — see `PlanUsage`.
+    public static var planUsageHistory: URL {
+        home
+            .appendingPathComponent("Library/Application Support/Claude")
+            .appendingPathComponent("plan-usage-history.json")
+    }
     public static var claudeSettings: URL { claudeDir.appendingPathComponent("settings.json") }
 
     public static var codexDir: URL { home.appendingPathComponent(".codex") }

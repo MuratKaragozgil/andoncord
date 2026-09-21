@@ -30,12 +30,28 @@ public final class BoardStore {
     @ObservationIgnored
     public var onSound: ((BoardSound) -> Void)?
 
+    /// Fired when Claude Code publishes a quota reading that differs from the
+    /// last one. The app uses it to re-calibrate spend against percentages;
+    /// the store itself has no opinion on what that means.
+    @ObservationIgnored
+    public var onQuotaSample: ((StatusSnapshot) -> Void)?
+
     /// Parked hooks, keyed by the `PendingRequest.id` shown in the UI.
     @ObservationIgnored
     private var decisions: [UUID: PendingDecision] = [:]
 
     @ObservationIgnored
     private var rateLimitWatcher: FileWatcher?
+
+    /// Readings of the quota windows over time. Claude Code reports only the
+    /// instantaneous percentage, so pace — the thing that decides whether the
+    /// quota lasts — has to be measured here.
+    @ObservationIgnored
+    public let quotaHistory = QuotaHistory()
+    /// Bumped whenever a new reading lands, so views that read `quotaHistory`
+    /// (which is deliberately outside observation, being append-mostly) still
+    /// redraw.
+    public private(set) var quotaRevision = 0
 
     public init() {}
 
@@ -69,6 +85,18 @@ public final class BoardStore {
 
     public var rateLimits: RateLimits? { status?.rateLimits }
 
+    /// Quota windows that are still describing something real, newest reading
+    /// first. Empty either because Claude Code has never reported quota, or
+    /// because every window we know about has since rolled over.
+    public func liveQuota(asOf now: Date = Date()) -> [(kind: QuotaWindowKind, window: RateLimitWindow)] {
+        rateLimits?.live(asOf: now) ?? []
+    }
+
+    public func forecast(for kind: QuotaWindowKind, now: Date = Date()) -> QuotaForecast {
+        _ = quotaRevision
+        return quotaHistory.forecast(for: kind, limits: rateLimits, now: now)
+    }
+
     public func session(id: String) -> Session? { sessions[id] }
 
     public func pendingRequest(id: UUID) -> PendingRequest? {
@@ -94,6 +122,23 @@ public final class BoardStore {
               let snapshot = try? JSONDecoder().decode(StatusSnapshot.self, from: data)
         else { return }
         status = snapshot
+        recordQuotaSample(from: snapshot)
+    }
+
+    /// Bank the reading so the next one has something to be compared against.
+    ///
+    /// The sample is stamped with `capturedAt` rather than now: the file may
+    /// have been written before the app launched, and dating an old reading to
+    /// this moment would flatten the pace calculation into nonsense.
+    private func recordQuotaSample(from snapshot: StatusSnapshot) {
+        guard let limits = snapshot.rateLimits, !limits.isEmpty else { return }
+        let sample = QuotaSample(
+            at: snapshot.capturedAt,
+            fiveHour: limits.fiveHour.map(\.usedPercentage),
+            sevenDay: limits.sevenDay.map(\.usedPercentage))
+        guard quotaHistory.record(sample) else { return }
+        quotaRevision += 1
+        onQuotaSample?(snapshot)
     }
 
     // MARK: - Event intake

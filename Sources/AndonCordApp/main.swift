@@ -33,6 +33,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !state.settings.hasCompletedOnboarding {
             menuBar.showOnboarding()
         }
+
+        // `open -a AndonCord --args --usage`. There is no Dock icon and no app
+        // menu, so without this the breakdown is only reachable by aiming at a
+        // menu bar glyph — which is a poor fit for something worth putting on
+        // a keyboard shortcut.
+        //
+        // Deferred a turn: opening a window from inside
+        // `applicationDidFinishLaunching` races the activation that is meant
+        // to bring it forward, and loses quietly — the window exists but is
+        // never ordered onto the screen.
+        if CommandLine.arguments.contains("--usage") {
+            DispatchQueue.main.async { [weak menuBar] in menuBar?.showUsage() }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

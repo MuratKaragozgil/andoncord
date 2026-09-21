@@ -58,11 +58,96 @@ hand-back-to-native escape hatch.
 | 🖥️ **Watch** | Every session's live state — a bouncing equalizer while working, amber blink when it needs you, red when stopped. Elapsed time ticks in real time. |
 | ✅ **Answer** | Approve or deny tool calls (with the actual diff or command in front of you), answer `AskUserQuestion` prompts, review and revise plans — all from the notch. |
 | 🎯 **Jump** | Click a session to land in its exact terminal tab, split, or tmux pane. |
-| 📊 **Budget** | 5-hour and weekly rate-limit windows, read from Claude Code itself — the same numbers `/usage` shows, not token-count guesswork. |
+| 📊 **Budget** | 5-hour and weekly rate-limit windows, read from Claude Code itself — and a straight answer to the question a percentage can't give you on its own: *will it last?* |
+| 🧾 **Account** | Where the tokens actually went — by project, by session, by prompt, by file. Read from Claude Code's own transcripts, which record every request and add up none of it. |
 | 🔊 **Hear** | Synthesized 8-bit cues, one per event, distinct enough to learn by ear. Replace any of them by dropping a `.wav` into `~/.andoncord/sounds`. |
 | 📺 **Place** | The board lives on the display you choose — the notched built-in screen or any external monitor (Settings → Display). |
 
 Everything is local. No account, no server, no telemetry, no network calls.
+
+## Will it last?
+
+A quota percentage on its own is unreadable. 60% used is comfortable four
+hours into a five-hour window and a wall you hit before lunch twenty minutes
+in. These windows are fixed-length, so their reset time gives away when they
+opened — and from that, AndonCord projects where the current pace lands:
+
+> **5H · 47% used, resets in 2h38m** — session runs out 16:12 at this pace
+
+Getting a *current* percentage is the harder half. Claude Code publishes
+`rate_limits` on exactly one surface — the statusline — and a statusline only
+renders while a session is drawing one. Work through the desktop app, an SDK
+session, or a headless run and that reading never updates at all; close every
+terminal and it stops the moment you do.
+
+So AndonCord reads whichever source is actually alive, in this order:
+
+1. **`~/Library/Application Support/Claude/plan-usage-history.json`** — the
+   Claude desktop app's own record, written every five minutes with the same
+   two percentages its Usage panel shows, and carrying a month of history.
+   Read-only; nothing is written back.
+2. **Claude Code's statusline**, for machines without the desktop app.
+3. **The transcripts**, when both have gone quiet — one real reading fixes the
+   scale between measured spend and a percentage, and the ledger carries it
+   from there.
+
+Neither source records when a window *opened*, which is what the forecast
+needs. The history does, implicitly: a reset is the percentage falling, and
+consecutive samples bracket the moment it happened.
+
+```
+13:29   5h  30%     ← still the old window
+13:44   5h   1%     ← new one, so it turned over in between
+```
+
+The weekly window resets on a fixed cadence, so every reset ever recorded
+constrains the same phase and the tightest bracket across a month pins it to
+within a few minutes.
+
+And a figure is never presented as current when it isn't:
+
+- a window whose reset time has passed is not drawn at all — that reading is
+  about a window which no longer exists
+- a reading Claude Code gave is shown plainly; anything AndonCord worked out
+  itself is marked `~` and says so on hover
+- between readings, the gap is filled from the transcripts. One honest reading
+  — "you are 40% through this window" — next to the spend that produced it
+  fixes the scale, and after that the ledger carries it forward on its own
+
+## Where the tokens went
+
+**Menu bar → Token Usage**, click the quota strip on the board, or
+`open -a AndonCord --args --usage` if you would rather put it on a shortcut.
+
+Claude Code writes every request it makes to
+`~/.claude/projects/<cwd>/<session>.jsonl`, `usage` block attached, and adds up
+none of it. AndonCord indexes those files and answers the four questions that
+follow from a quota running low:
+
+| | |
+|---|---|
+| **Projects** | which repo is eating the week |
+| **Sessions** | which conversation inside it, largest first |
+| **Prompts** | what one thing you typed set in motion — its replies, its tool calls, its retries |
+| **Context** | which files and commands are actually carrying the cost |
+
+That last one is the least obvious and usually the answer. A 40k-token file
+read on turn 3 of a 60-turn session is re-sent as a cache read on all 57
+requests that follow, so it is charged nearly sixty times over. The Context
+list separates *direct* (the result itself) from *re-sent* (the same result
+travelling again on every later request), and the second column is normally the
+larger one.
+
+Two details decide whether these numbers are true, and both are easy to get
+wrong: Claude Code writes one line per content block and repeats the identical
+`usage` object on every one of them — counting per line inflates every total by
+roughly 3× — and dollar figures are a *cost-equivalent*, what the same traffic
+would cost at API list prices, since a subscription is not billed per token at
+all.
+
+The index is built once, cached in `~/.andoncord/usage-index.json`, and only
+re-reads files that changed. Nothing leaves the machine; the transcripts are
+opened read-only and never modified.
 
 ## The lamp language
 
