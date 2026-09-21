@@ -61,7 +61,11 @@ public struct RateLimitWindow: Codable, Sendable, Equatable {
         let days = totalMinutes / 1440
         let hours = (totalMinutes % 1440) / 60
         let minutes = totalMinutes % 60
-        if days > 0 { return "\(days)d \(hours)h" }
+        // Non-breaking space: this is one token, and the only form here with a
+        // gap in it. In the notch strip — the tightest place it is drawn — an
+        // ordinary space let "2d 2h" break across two lines and push the whole
+        // row taller than everything beside it.
+        if days > 0 { return "\(days)d\u{00A0}\(hours)h" }
         if hours > 0 { return "\(hours)h\(minutes)m" }
         return "\(minutes)m"
     }

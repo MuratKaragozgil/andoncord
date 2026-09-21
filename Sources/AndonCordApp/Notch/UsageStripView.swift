@@ -120,6 +120,10 @@ struct UsageStripView: View {
                     .help("Context window used in the session that last reported")
             }
         }
+        // The half of the row that yields when the meters will not: each part
+        // stays on one line and drops its tail rather than stacking.
+        .lineLimit(1)
+        .truncationMode(.tail)
     }
 
     /// One line, and only when it changes what someone would do: a quota about
@@ -185,6 +189,13 @@ struct QuotaMeterView: View {
                     .monospacedDigit()
             }
         }
+        // Nothing in a meter may wrap or be clipped. The strip is a fixed-width
+        // row with a spacer in it, so under pressure SwiftUI compresses
+        // whichever child will yield — and a meter that gives is a meter that
+        // grows a second line and makes the whole strip jump. Let the summary
+        // on the right shorten instead; it is the one part of this row that
+        // reads fine truncated.
+        .fixedSize(horizontal: true, vertical: false)
         .opacity(readout.isMeasured ? 1 : 0.68)
         .help(helpText)
     }
