@@ -1,6 +1,29 @@
 import AndonKit
 import SwiftUI
 
+/// Whether the enclosing subtree is actually on screen, as opposed to merely
+/// laid out.
+///
+/// `NotchRootView` keeps both the pill and the full panel in the hierarchy at
+/// all times and cross-fades between them, because measuring the panel's
+/// height only on the way in is what made the first expansion snap. SwiftUI
+/// does not stop working on a view because its opacity is zero, so without a
+/// signal like this the hidden half keeps a per-frame `TimelineView` and a
+/// once-a-second ticker running behind a fully transparent container.
+///
+/// Defaults to `true` so anything outside the notch panel — Settings,
+/// onboarding — behaves normally without opting in.
+private struct AndonVisibilityKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var andonIsVisible: Bool {
+        get { self[AndonVisibilityKey.self] }
+        set { self[AndonVisibilityKey.self] = newValue }
+    }
+}
+
 /// The visual language: an andon board, rendered for a Retina display.
 ///
 /// Two constraints shape everything here. The panel hangs off the notch, so it
@@ -155,6 +178,15 @@ struct WorkingIndicator: View {
     let color: Color
     var size: CGFloat = 8
 
+    /// Every frame costs three sines, three shape rebuilds and a shadow blur,
+    /// once per active session. That is the price of the effect and worth it
+    /// while someone can see it; behind a transparent container it is pure
+    /// waste, so the schedule pauses rather than the view being torn down.
+    /// Heights come from absolute time, so resuming lands wherever the wave is
+    /// by then — a discontinuity nobody can see, since it happens while the
+    /// bars are invisible.
+    @Environment(\.andonIsVisible) private var isVisible
+
     private let barCount = 3
     /// Each bar is offset in the wave so they never move in unison, which is
     /// what separates "activity" from "a blinking group".
@@ -164,7 +196,7 @@ struct WorkingIndicator: View {
         let barWidth = size * 0.22
         let spacing = size * 0.17
 
-        TimelineView(.animation) { timeline in
+        TimelineView(.animation(paused: !isVisible)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             HStack(alignment: .center, spacing: spacing) {
                 ForEach(0..<barCount, id: \.self) { index in

@@ -13,6 +13,7 @@ struct SessionRowView: View {
     @State private var jumpFailure: String?
     /// Drives the elapsed-time readout without a timer per row.
     @State private var now = Date()
+    @Environment(\.andonIsVisible) private var isVisible
 
     private static let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -80,7 +81,9 @@ struct SessionRowView: View {
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onTapGesture { if canJump { jump() } }
-        .onReceive(Self.ticker) { now = $0 }
+        // The panel is laid out even while collapsed, so without this every row
+        // re-renders once a second behind a fully transparent container.
+        .onReceive(Self.ticker) { if isVisible { now = $0 } }
         .help(session.cwd ?? "")
     }
 

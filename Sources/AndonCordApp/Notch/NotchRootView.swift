@@ -49,6 +49,7 @@ struct NotchRootView: View {
 
     private var isExpanded: Bool { controller.presentation == .expanded }
     private var isHidden: Bool { controller.presentation == .hidden }
+    private var isPill: Bool { controller.presentation == .pill }
 
     /// Height the panel wants, clamped so a long session list scrolls instead
     /// of running off the bottom of the screen.
@@ -93,12 +94,16 @@ struct NotchRootView: View {
                     }
                     .opacity(isExpanded ? 1 : 0)
                     .allowsHitTesting(isExpanded)
+                    // Laid out continuously by design (above), so it has to be
+                    // told when it is merely measured rather than seen.
+                    .environment(\.andonIsVisible, isExpanded)
 
                 CollapsedPillView(controller: controller, app: app)
                     .frame(width: controller.pillWidth,
                            height: AndonTheme.Metrics.pillHeight)
                     .opacity(isExpanded ? 0 : 1)
                     .allowsHitTesting(!isExpanded)
+                    .environment(\.andonIsVisible, isPill)
             }
             .frame(width: targetSize.width, height: targetSize.height, alignment: .top)
             .background {
@@ -140,6 +145,11 @@ struct CollapsedPillView: View {
     @State private var now = Date()
     private static let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    /// The pill is cross-faded out while the panel is open, and the whole
+    /// window is ordered out while hidden; neither is a moment to keep a clock
+    /// running.
+    @Environment(\.andonIsVisible) private var isVisible
+
     private var focus: Session? { app.board.focusSession }
     private var waitingCount: Int { app.board.sessionsNeedingHuman.count }
 
@@ -163,9 +173,10 @@ struct CollapsedPillView: View {
         .frame(height: AndonTheme.Metrics.pillHeight)
         .contentShape(Rectangle())
         .onTapGesture { controller.toggleExpanded() }
-        // Tick only while something is actively running, so an idle pill is not
-        // waking the machine once a second for no reason.
-        .onReceive(Self.ticker) { if focus?.state.isActive == true { now = $0 } }
+        // Tick only while the pill is on screen and something is actively
+        // running, so an idle or cross-faded-out pill is not waking the machine
+        // once a second for no reason.
+        .onReceive(Self.ticker) { if isVisible, focus?.state.isActive == true { now = $0 } }
     }
 
     @ViewBuilder
