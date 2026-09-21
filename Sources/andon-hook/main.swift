@@ -75,12 +75,39 @@ if isStatusline {
     // else, which is the entire reason AndonCord installs a statusline at
     // all. Cache it, then hand control to whatever statusline the user had
     // before us so their own output is untouched.
-    if let snapshot = try? JSONDecoder().decode(StatusSnapshot.self, from: stdinData),
-       snapshot.rateLimits?.isEmpty == false || snapshot.contextWindow != nil {
-        try? Paths.ensureDirectories()
-        if let encoded = try? JSONEncoder().encode(snapshot) {
-            try? encoded.write(to: Paths.rateLimitsCache, options: .atomic)
+    // Every failure here is silent by design — a statusline that printed an
+    // error would put it in the user's prompt — but silent must not also mean
+    // invisible. This path stopped writing for eight days once and the only
+    // symptom was a readout that had quietly stopped moving, so each way it can
+    // decline to write says so in the log.
+    if let snapshot = try? JSONDecoder().decode(StatusSnapshot.self, from: stdinData) {
+        let names = snapshot.rateLimits?.unrecognisedWindowNames ?? []
+        if !names.isEmpty {
+            // Kept and cached, not dropped — but worth saying, because it is
+            // the first sign that the payload has grown a window this build
+            // has no opinion about.
+            Log.hook.notice(
+                "statusline: unrecognised rate-limit windows \(names.joined(separator: ", "), privacy: .public)")
         }
+        if snapshot.rateLimits?.isEmpty == false || snapshot.contextWindow != nil {
+            try? Paths.ensureDirectories()
+            if let encoded = try? JSONEncoder().encode(snapshot) {
+                do {
+                    try encoded.write(to: Paths.rateLimitsCache, options: .atomic)
+                } catch {
+                    Log.hook.error(
+                        "statusline: cache write failed: \(error.localizedDescription, privacy: .public)")
+                }
+            } else {
+                Log.hook.error("statusline: could not encode snapshot")
+            }
+        } else {
+            // The shape parsed but carried nothing we could use, which is what
+            // a renamed or restructured `rate_limits` looks like from here.
+            Log.hook.notice("statusline: payload had no usable rate limits or context window")
+        }
+    } else {
+        Log.hook.error("statusline: payload did not decode as a StatusSnapshot")
     }
 
     // Chain to the previous statusline command, passing the identical payload.

@@ -84,17 +84,83 @@ public struct RateLimits: Codable, Sendable, Equatable {
     public var fiveHour: RateLimitWindow?
     public var sevenDay: RateLimitWindow?
 
-    enum CodingKeys: String, CodingKey {
-        case fiveHour = "five_hour"
-        case sevenDay = "seven_day"
+    /// Every window in the payload that is not one of the two above, keyed by
+    /// the name the payload used.
+    ///
+    /// This exists because the two named fields were not a complete list and
+    /// there is no reason to think they ever will be — Anthropic has since
+    /// started reporting a per-model weekly window alongside them, and the old
+    /// decoder dropped it on the floor without a word. Anything unrecognised is
+    /// kept verbatim and round-trips through the cache, so a window this build
+    /// has never heard of is still available to show and still legible in
+    /// `rate-limits.json` when someone goes looking.
+    ///
+    /// `Paths.rateLimitsCache` written by an older build simply has none.
+    public var others: [String: RateLimitWindow] = [:]
+
+    /// Keys handled by the typed fields, so `others` stays free of duplicates.
+    private static let knownKeys: Set<String> = ["five_hour", "seven_day"]
+
+    /// Names that arrived in the payload but that this build has no typed
+    /// field for. Empty on a payload that matches expectations, which is what
+    /// makes it worth logging when it is not.
+    public var unrecognisedWindowNames: [String] { others.keys.sorted() }
+
+    private struct RawKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
     }
 
-    public init(fiveHour: RateLimitWindow? = nil, sevenDay: RateLimitWindow? = nil) {
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: RawKey.self)
+        for key in c.allKeys {
+            guard let window = try? c.decode(RateLimitWindow.self, forKey: key) else { continue }
+            switch key.stringValue {
+            case "five_hour": fiveHour = window
+            case "seven_day": sevenDay = window
+            default: others[key.stringValue] = window
+            }
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: RawKey.self)
+        if let fiveHour, let key = RawKey(stringValue: "five_hour") {
+            try c.encode(fiveHour, forKey: key)
+        }
+        if let sevenDay, let key = RawKey(stringValue: "seven_day") {
+            try c.encode(sevenDay, forKey: key)
+        }
+        for (name, window) in others.sorted(by: { $0.key < $1.key }) {
+            guard !Self.knownKeys.contains(name), let key = RawKey(stringValue: name) else { continue }
+            try c.encode(window, forKey: key)
+        }
+    }
+
+    public init(
+        fiveHour: RateLimitWindow? = nil, sevenDay: RateLimitWindow? = nil,
+        others: [String: RateLimitWindow] = [:]
+    ) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
+        self.others = others
     }
 
-    public var isEmpty: Bool { fiveHour == nil && sevenDay == nil }
+    /// Counts unrecognised windows too, and that is the point: the statusline
+    /// only caches a payload it considers non-empty, so a release that renamed
+    /// both known keys would otherwise stop the readout dead and leave the last
+    /// good reading on screen looking current.
+    public var isEmpty: Bool { fiveHour == nil && sevenDay == nil && others.isEmpty }
+
+    /// Unrecognised windows that are still describing something real, for a UI
+    /// that would rather show a window it cannot name than pretend it does not
+    /// exist. Sorted for a stable order across reads.
+    public func liveOthers(asOf now: Date = Date()) -> [(name: String, window: RateLimitWindow)] {
+        others.sorted { $0.key < $1.key }
+            .compactMap { $0.value.isExpired(asOf: now) ? nil : ($0.key, $0.value) }
+    }
 
     public func window(_ kind: QuotaWindowKind) -> RateLimitWindow? {
         switch kind {
