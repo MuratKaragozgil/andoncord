@@ -40,6 +40,21 @@ public final class ChiptuneEngine {
     /// Repeats of the same cue inside this window collapse into one.
     private static let coalesceWindow: TimeInterval = 0.15
 
+    /// How long the graph stays up after the last cue before handing the audio
+    /// device back.
+    ///
+    /// A running `AVAudioEngine` is not free just because it is silent: the
+    /// render block is still called ~93 times a second, and the output unit
+    /// keeps the audio hardware awake. Measured on an idle graph that does
+    /// nothing but zero its buffer, that is ~0.7% of a core in this process
+    /// plus ~2.4% in `coreaudiod` — for silence, forever, since the board is
+    /// quiet the overwhelming majority of the time.
+    ///
+    /// Comfortably longer than `maxVoiceFrames` (2.5s), so a cue is always
+    /// finished before the teardown it scheduled can run, and long enough that
+    /// a burst of hook events does not tear down and rebuild between cues.
+    public static let defaultIdleTimeout: TimeInterval = 5
+
     private static let stateFree: Int32 = 0
     private static let stateBuilding: Int32 = 1
     private static let stateQueued: Int32 = 2
@@ -82,6 +97,13 @@ public final class ChiptuneEngine {
     private var engine: AVAudioEngine?
     private var sourceNode: AVAudioSourceNode?
     private var configurationObserver: NSObjectProtocol?
+    /// Pending idle teardown, cancelled and re-armed by every cue. Lives on
+    /// `queue` like everything else that touches the engine.
+    private var idleTeardown: DispatchWorkItem?
+
+    /// Whether the audio graph is currently up. Exists so the idle-teardown
+    /// behaviour is testable; nothing in the engine branches on it.
+    var isEngineRunning: Bool { queue.sync { engine?.isRunning == true } }
 
     /// Everything that touches the engine, the voice pool's producer side, and
     /// the sample-pack cache runs here. `play` therefore never blocks the main
@@ -109,7 +131,12 @@ public final class ChiptuneEngine {
         set { stateLock.withLock { volumeStorage = min(max(newValue, 0), 1) } }
     }
 
-    public init() {
+    /// Seconds of quiet before the graph is torn down. Injectable so a test
+    /// can assert the teardown happens without waiting out the real one.
+    private let idleTimeout: TimeInterval
+
+    public init(idleTimeout: TimeInterval = ChiptuneEngine.defaultIdleTimeout) {
+        self.idleTimeout = idleTimeout
         voiceLock = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
         voiceLock.initialize(to: os_unfair_lock())
 
@@ -124,6 +151,7 @@ public final class ChiptuneEngine {
     }
 
     deinit {
+        idleTeardown?.cancel()
         // Order matters: the render block holds raw pointers into `voices` and
         // does not keep them alive. Stopping the engine is what guarantees no
         // callback is in flight by the time the memory goes away.
@@ -162,10 +190,11 @@ public final class ChiptuneEngine {
         queue.async { [weak self] in self?.perform(sound) }
     }
 
-    /// Stops the engine and hands the audio device back.
+    /// Stops the engine and hands the audio device back immediately.
     ///
-    /// The voice pool survives — a later `play` lazily rebuilds the graph — so
-    /// this is safe to call when the board goes idle, not only at quit.
+    /// The voice pool survives — a later `play` lazily rebuilds the graph. The
+    /// engine also tears itself down `idleTimeout` after the last cue, so this
+    /// is only for quitting, where waiting out the countdown is pointless.
     public func shutdown() {
         queue.sync {
             self.teardownEngine()
@@ -189,6 +218,9 @@ public final class ChiptuneEngine {
     private func perform(_ sound: BoardSound) {
         ensureEngineRunning()
         guard engine?.isRunning == true else { return }
+        // Re-armed per cue, so the graph only lives across a burst of events
+        // and goes away once the board falls quiet.
+        armIdleTeardown()
 
         let gain = volume
         guard gain > 0 else { return }
@@ -329,11 +361,34 @@ public final class ChiptuneEngine {
 
     // MARK: - Engine lifecycle
 
+    /// (Re)start the countdown to handing the audio device back.
+    ///
+    /// Always called on `queue`, and the work item runs there too, so this
+    /// needs no lock of its own.
+    private func armIdleTeardown() {
+        idleTeardown?.cancel()
+        // A cancelled work item is never executed, so re-arming is enough to
+        // call off a teardown that a later cue has made premature.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.idleTeardown = nil
+            self.teardownEngine()
+            // Nothing can still be sounding by now, but the pool is reused
+            // across rebuilds so it must not carry stale playheads forward.
+            self.resetVoices()
+        }
+        idleTeardown = work
+        queue.asyncAfter(deadline: .now() + idleTimeout, execute: work)
+    }
+
     private func ensureEngineRunning() {
         if engine == nil { buildEngine() }
         guard let engine, !engine.isRunning else { return }
         do {
             try engine.start()
+            // Every path that brings the graph up arms its own teardown, so a
+            // rebuild triggered by a device change cannot leave it running.
+            armIdleTeardown()
         } catch {
             Log.ui.error("chiptune: engine failed to start: \(error.localizedDescription, privacy: .public)")
             teardownEngine()
@@ -381,6 +436,8 @@ public final class ChiptuneEngine {
     }
 
     private func teardownEngine() {
+        idleTeardown?.cancel()
+        idleTeardown = nil
         if let configurationObserver {
             NotificationCenter.default.removeObserver(configurationObserver)
             self.configurationObserver = nil
