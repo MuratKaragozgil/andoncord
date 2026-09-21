@@ -175,20 +175,37 @@ struct AndonLamp: View {
 /// activity, and it stops dead the instant the session stops working because
 /// the lamp switches to `DotLamp`.
 ///
-/// ## Why this draws into a `Canvas` instead of stacking three `Capsule`s
+/// ## What this lamp costs, and why it draws instead of stacking
 ///
-/// The obvious version — an `HStack` of capsules whose `frame(height:)` comes
-/// out of the sine — measured at **27% of a core**, for one 8-point lamp. A
-/// view whose *size* changes every frame invalidates layout every frame, and
-/// SwiftUI does not relayout that lamp in isolation: it relayouts the whole
-/// hosting view. `NotchRootView` deliberately keeps the entire expanded panel
-/// laid out at all times so its height is known before an expansion starts, so
-/// "the whole hosting view" is the full board — every session row, measured
-/// again, 120 times a second, to move three 8-point bars.
+/// One animating lamp is the single most expensive thing in the app. Measured
+/// against a board holding exactly one active session, sampled for 12 seconds
+/// (inject with `{"session_id":…,"hook_event_name":"UserPromptSubmit"}` through
+/// `andon-hook`, or the numbers move under you as real sessions come and go):
 ///
-/// Drawing instead of stacking keeps the geometry constant: the `Canvas` is a
-/// single fixed-size leaf, so a new frame is a redraw and never a relayout.
-/// Same picture, and the same lamp then measures at ~0%.
+///     HStack of Capsules, frame(height:) from the sine    28.3%
+///     this Canvas version                                 21.0%
+///     …with the panel's radius-24 shadow removed          21.1%
+///     …with the expanded panel not laid out while closed  18.6%
+///     lamp paused entirely                                 0.5%
+///
+/// Stacking was worse because a view whose *size* changes every frame
+/// invalidates layout every frame, and SwiftUI does not relayout an 8-point
+/// lamp in isolation — it relayouts the hosting view, which `NotchRootView`
+/// deliberately keeps holding the entire expanded panel. Drawing into a
+/// fixed-size `Canvas` makes a frame a redraw and never a relayout, and that
+/// is worth the 7 points it buys.
+///
+/// It does not buy more than that, and the last two rows say why: neither the
+/// shadow nor the always-laid-out panel is the bulk of it. What remains is the
+/// window. `NotchPanel` is 568×652, borderless, transparent, `.statusBar`
+/// level and `.canJoinAllSpaces` — recompositing that above everything else on
+/// screen is the cost, and it is paid per frame no matter how little of it
+/// changed. Only not animating avoids it.
+///
+/// So the lever that is left is frame rate, and it is sublinear: capping the
+/// schedule at 30fps measures 14.2% and 15fps measures 11.6%. Worth reaching
+/// for only if the motion still reads as alive at that rate, which is a
+/// judgement about the product, not a measurement.
 struct WorkingIndicator: View {
     let color: Color
     var size: CGFloat = 8
