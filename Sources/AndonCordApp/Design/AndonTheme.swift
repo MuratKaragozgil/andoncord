@@ -202,10 +202,13 @@ struct AndonLamp: View {
 /// screen is the cost, and it is paid per frame no matter how little of it
 /// changed. Only not animating avoids it.
 ///
-/// So the lever that is left is frame rate, and it is sublinear: capping the
-/// schedule at 30fps measures 14.2% and 15fps measures 11.6%. Worth reaching
-/// for only if the motion still reads as alive at that rate, which is a
-/// judgement about the product, not a measurement.
+/// So the lever that is left is frame rate, and it is sublinear: 30fps
+/// measures 14.2% and 15fps measures 11.6%. `frameRate` below takes the first
+/// of those. The bars still move continuously — they are still a sine of the
+/// real clock, not a two-state pulse — they are just sampled at a rate a
+/// three-bar equalizer eight points tall cannot tell from the display's own.
+/// 15fps was left on the table deliberately: another 2.6 points is not worth
+/// motion you can see stepping.
 struct WorkingIndicator: View {
     let color: Color
     var size: CGFloat = 8
@@ -222,11 +225,14 @@ struct WorkingIndicator: View {
     /// what separates "activity" from "a blinking group".
     private let phases: [Double] = [0, 1.1, 2.2]
 
+    /// Deliberately below the display's rate — see the measurements above.
+    private static let frameRate: Double = 30
+
     var body: some View {
         let barWidth = size * 0.22
         let spacing = size * 0.17
 
-        TimelineView(.animation(paused: !isVisible)) { timeline in
+        TimelineView(.animation(minimumInterval: 1 / Self.frameRate, paused: !isVisible)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             Canvas { context, canvasSize in
                 let span = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * spacing
